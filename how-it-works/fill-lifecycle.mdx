@@ -1,0 +1,104 @@
+---
+title: "A fill, step by step"
+description: "What happens between Fill this page and Continue: the plan, the fill loop, the waits, and every way a fill stops."
+icon: "workflow"
+---
+
+## From click to report
+
+<div className="pele-diagram">
+```text
+sequenceDiagram
+  autonumber
+  actor Agent
+  participant Panel as Side panel
+  participant Plan as plan.js
+  participant Kit as pagekit (carrier tab)
+  participant Page as Carrier page
+  Agent->>Panel: Fill this page
+  Panel->>Panel: Which carrier, page or step,<br/>and active driver / vehicle?
+  Panel->>Plan: buildPlan(record, carrier, active)
+  Plan-->>Panel: field steps + action steps
+  Panel->>Kit: inject field-key.js + pagekit.js,<br/>then fill(plan, options)
+  loop Until nothing new to do
+    Kit->>Page: collect controls (shadow roots too)
+    Kit->>Kit: assign rules to controls
+    Kit->>Page: answer (one per round on server-backed pages)
+    Kit->>Page: wait until the page is quiet
+    Kit->>Page: read the answer back, rescan for follow-ups
+  end
+  Kit-->>Panel: fill report
+  Panel->>Agent: Answers on this page + what needs you
+  opt Nothing left for the agent and Continue allowed
+    Panel->>Kit: click the carrier's Continue
+  end
+```
+</div>
+
+## The fill loop
+
+Each round collects the page's controls, assigns rules to them, applies answers, waits, rereads values and rescans. Server-backed pages such as Progressive's check every answer with their server, so they fill **one answer per round**. A carrier with `batch: true` (AmWINS) fills a whole visible round before it settles. Batching is only turned on with evidence about that carrier.
+
+<div className="pele-diagram">
+```text
+flowchart TD
+  START([Round starts]) --> COLLECT["Collect controls<br/>in page order"]
+  COLLECT --> STEP{"Step on screen<br/>readable?"}
+  STEP -- "no (bar and title disagree)" --> HALT["Halt: fill again<br/>once the page settles"]
+  STEP -- yes --> ASSIGN["Assign rules:<br/>name → text → selector → label"]
+  ASSIGN --> APPLY["Apply answers"]
+  APPLY --> WAIT["Wait for a quiet page<br/>(spinners, requests, redraws)"]
+  WAIT --> READ["Read values back"]
+  READ --> STICK{"Did the page<br/>keep them?"}
+  STICK -- "rejected" --> RETRY["Give it again,<br/>at most twice"]
+  RETRY --> WAIT
+  STICK -- yes --> NEW{"New follow-up<br/>questions?"}
+  NEW -- yes --> COLLECT
+  NEW -- no --> HELPERS{"Helper actions due?<br/>(Verify DOT, Add Vehicle…)"}
+  HELPERS -- yes --> CLICK["Click once,<br/>verify it showed something"]
+  CLICK --> COLLECT
+  HELPERS -- no --> DONE([Report])
+```
+</div>
+
+### Waits the engine respects
+
+- **Quiet page.** Spinners such as GEICO's `#page-load` count as busy. Server round trips and redraws must settle before the next answer.
+- **`waitFor`.** A rule can hold its answer while another question is unanswered or not drawn yet, up to eight seconds. GEICO's vehicle form waits for its VIN decode, which redraws the form and clears answers given before it.
+- **Lists still loading.** A list filled by an earlier answer gets a few seconds to load before "no option matches". A list with one distinct option is treated as still loading.
+- **`retryOnce`.** After a fill that answered questions a late redraw could clear, the engine looks once more after the page goes quiet.
+
+## When the fill clicks Continue
+
+<div className="pele-diagram">
+```text
+flowchart TD
+  R([Fill report]) --> B{"Anything left<br/>for the agent?"}
+  B -- "needs you, check items,<br/>AI picks to approve" --> HOLD["Hold. The bar says<br/>the one next thing to do"]
+  B -- no --> S{"Setting: Click Continue<br/>when the page is done?"}
+  S -- off --> MAN["Agent clicks Continue"]
+  S -- on --> P{"Carrier allows<br/>Continue here?"}
+  P -- "no (Print, NoHit, stop steps,<br/>GEICO from Quote & Coverages)" --> MAN
+  P -- yes --> L{"Let me look<br/>before Continue?"}
+  L -- on --> LOOK["Wait for 'Looks right,<br/>continue' in the bar"]
+  L -- off --> C["Click Continue once"]
+  LOOK --> C
+```
+</div>
+
+The pattern for each carrier's Continue lives in its `advance` setting, with the pages it never clicks on (`exceptPages`). The engine never clicks Finish, Buy, Bind or Submit.
+
+## Every way a fill stops
+
+| Stop | What happens |
+| --- | --- |
+| **Stop** in the panel | Halts after the answer going in, keeps what's in, clicks nothing more |
+| The agent edits a field mid-fill | The agent's value stays, its key is protected from later fills |
+| The step on screen changes (the agent's Next) | Nothing more is given or clicked; the report files under the step it started on |
+| A stop page or stop step | Nothing is filled or clicked, Luna isn't asked (`stopPages`, `stopSteps`, `stopButtons`) |
+| The page seems changed | At least five questions and 40% of the page unfamiliar, or a known field looks renamed: `pageChanged`, Continue waits |
+| A dialog covers the button to click | The fill doesn't click through it and names the button |
+| The quote is for another state | The panel fills nothing until the agent confirms the state or clicks **Fill anyway** |
+| A unit form looks like another unit's | GEICO only: the form is held, nothing typed, until the agent picks its unit |
+
+Source: [`docs/browser-filling.md`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/docs/browser-filling.md)

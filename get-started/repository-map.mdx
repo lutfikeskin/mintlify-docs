@@ -1,0 +1,83 @@
+---
+title: "Repository map"
+description: "What each folder holds, the files that matter, and where a change belongs."
+icon: "folder-tree"
+---
+
+<div className="pele-diagram">
+```text
+flowchart TB
+  subgraph SHIP["Shipped to Chrome: the store zip"]
+    direction TB
+    SP["sidepanel/<br/>sidepanel.js<br/>usage-log.js"]
+    SRC["src/<br/>intake, normalize,<br/>plan, carriers/, usage"]
+    CONTENT["src/content/<br/>pagekit, recorder,<br/>field-key, page-press"]
+    AI["src/ai/<br/>luna.js<br/>tni-rules.js"]
+  end
+  subgraph DEV["Development only"]
+    direction TB
+    SERVER["server/<br/>index.mjs"]
+    SCRIPTS["scripts/<br/>review, mocks,<br/>package, CI"]
+    TEST["test/<br/>units, fixtures,<br/>replay pages"]
+    TYPES["types.js<br/>docs/<br/>.claude/skills/"]
+  end
+  SHIP ~~~ DEV
+```
+</div>
+
+## The extension
+
+These are the only files the store zip carries: `manifest.json`, `background.js`, `icons/`, `lib/`, `sidepanel/` and `src/`.
+
+| Path | What it does |
+| --- | --- |
+| `manifest.json` | MV3 manifest: side panel, `scripting`, `storage`, `unlimitedStorage`, the carrier hosts, OpenAI, the usage server, and the **Alt+Shift+C** capture command |
+| `background.js` | Opens the side panel from the toolbar icon, and limits `chrome.storage.local` to the extension's own pages so content scripts can't read the OpenAI key or the upload token |
+| `sidepanel/sidepanel.js` | The orchestrator, about 5,900 lines: loads the intake, builds plans, injects the fill engine, renders the report, runs AI requests, schedules automatic fills and Continue |
+| `sidepanel/usage-log.js` | The usage queue in local storage, uploads, export |
+| `src/intake.js` | Reads the PDF's named form fields with PDF.js |
+| `src/normalize.js` | Cleans those answers into a client record and produces the warnings |
+| `src/schema.js` | Every client-record field: section, label and kind of value |
+| `src/intake-source.js` | Where each answer sits on the PDF, for **See in intake** |
+| `src/plan.js` | Resolves rule values into fill steps; builds the capture redaction list |
+| `src/carriers.js`, `src/carriers/` | The carrier registry, and each carrier's rules, actions and settings |
+| `src/rules.js` | Generic label rules for carriers without exact mappings |
+| `src/content/pagekit.js` | The fill engine, injected into the carrier page: find, fill, verify, mark, capture |
+| `src/content/recorder.js` | Watches the carrier page for changes the agent or the page makes |
+| `src/content/field-key.js` | Stable identities for controls across fills, recording and redraws |
+| `src/content/page-press.js` | On GEICO, presses buttons from the page's own world, as a mouse click would |
+| `src/ai/` | Luna's request and response contract (`luna.js`) and TNI's rulebook as the model reads it (`tni-rules.js`) |
+| `src/usage.js` | Builds usage events and the intake profile, without client identifiers |
+| `src/storage-version.js` | Migrates what the extension keeps in local storage from older builds |
+| `src/premium.js` | Reads the premium a carrier page quotes |
+| `lib/` | PDF.js, vendored |
+
+## Outside the package
+
+| Path | What it does |
+| --- | --- |
+| `types.js` | The shapes passed between parts, as JSDoc typedefs, for `npm run typecheck`. Comments only, at the root so it's never packaged |
+| `server/` | The usage collection server (`index.mjs`, its `Dockerfile` and the privacy page) |
+| `scripts/` | Review and learning tools, mocks, replays, packaging, local CI. Shared code is in `scripts/lib/` |
+| `test/` | `node:test` files, scrubbed fixtures, the replay page and mock raters |
+| `captures/` | Page layouts captured from real quotes, without client data |
+| `docs/` | The focused design documents these pages summarize |
+| `.claude/skills/` | The `weekly-review` and `apply-review-fixes` skills |
+| `layouts/`, `server-data/`, `reviews/` | Ignored: raw captures, pulled logs, generated reports |
+
+## Where a change belongs
+
+| If the change affects… | Start in… | Read |
+| --- | --- | --- |
+| How the intake is read or cleaned | `src/normalize.js`, `src/schema.js` | [Reading the intake](/carriers-and-rules/intake) |
+| Which answer a question gets | `src/carriers/<carrier>.js`, `src/plan.js` | [Rules and the fill plan](/carriers-and-rules/rules) |
+| Finding controls, waits, helpers, Continue | `src/content/pagekit.js`, `sidepanel/sidepanel.js` | [Browser filling](/carriers-and-rules/browser-filling) |
+| AI suggestions and approval | `src/ai/`, `sidepanel/sidepanel.js` | [AI assistant](/ai-and-learning/ai-assistant) |
+| Events, layouts, the learner | `src/usage.js`, `scripts/lib/` | [Usage events](/ai-and-learning/usage-events), [Learning loop](/ai-and-learning/learning-loop) |
+| A reported wrong answer | depends on the cause | [Fixing a reported problem](/ai-and-learning/corrections) |
+| A new carrier or scenario | `src/carriers/` | [Adding a carrier](/carriers-and-rules/new-carrier) |
+| The server | `server/index.mjs` | [Collection server](/server-and-data/collection-server) |
+
+<Tip>
+The repository's `CLAUDE.md` and `AGENTS.md` hold the same short working rules for coding agents, with a table of which `docs/` file to read for each kind of change.
+</Tip>

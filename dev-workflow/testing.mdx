@@ -1,0 +1,77 @@
+---
+title: "Testing"
+description: "The layers of checks, which ones a change needs, what each proves and doesn't, and how CI runs them."
+icon: "flask-conical"
+---
+
+## Layers of checks
+
+<div className="pele-diagram">
+```text
+flowchart LR
+  U["Unit tests<br/>npm test"] --> M["Browser mocks<br/>AmWINS, GEICO,<br/>Luna"] --> R["Layout replays<br/>npm run e2e"] --> X["Packaged<br/>extension<br/>e2e:extension"] --> L(["Supervised<br/>live runs"])
+```
+</div>
+
+Left to right, each layer is slower and closer to the live carrier. Each still proves less about the live carrier than it looks like. A passing mock confirms behavior against a model of the page, not the carrier's own scripts or its backend.
+
+## Which checks a change needs
+
+| Affected behavior | Checks |
+| --- | --- |
+| Intake extraction or cleanup | `test/normalize.test.mjs`, `test/intake-regressions.test.mjs`, `test/intake-forms.test.mjs`, `test/intake-source.test.mjs` |
+| Progressive rules or page execution | `test/progressive.test.mjs`, `test/pagekit.test.mjs`, `npm run e2e -- --fixtures` |
+| AmWINS rules or application flow | `npm run mock:amwins` |
+| GEICO rules or quote flow | `test/geico.test.mjs`, `test/provenance.test.mjs`, GEICO tests in pagekit, recorder and panel-safety tests, `test/geico-fixture.test.mjs`, `npm run mock:geico` |
+| Panel orchestration or packaged behavior | `test/sidepanel-safety.test.mjs`, `npm run e2e:extension` |
+| A carrier option, plan step, report or event field | `npm run typecheck`, with the field in `types.js` |
+| What the extension stores | `test/storage-version.test.mjs`, `npm run mock:luna` |
+| AI validation, approvals, caching | `test/luna.test.mjs`, `test/ai-eval.test.mjs`, `npm run mock:luna` |
+| Events, learning, layout coverage, transport | The matching `usage`, `usage-log`, `learn`, `coverage`, `conditions`, `weekly-signals`, `ledger`, `server`, `consistency` tests |
+| A rule change measured on recorded quotes | `npm run benchmark` on `main` with `--save`, then on the branch with `--against` |
+| The quoting history warehouse | `test/warehouse.test.mjs` |
+| Documentation only | Link and command checks, `git diff --check` |
+
+Run `npm test` for every code change, plus the affected integration checks.
+
+## The harnesses
+
+<AccordionGroup>
+  <Accordion title="pagekit on a virtual clock" icon="timer">
+    `test/pagekit.test.mjs` runs the real fill engine in a `vm` context whose `setTimeout`, `clearTimeout` and `Date` come from the harness. The clock jumps to the next due timer whenever the event loop would idle, so settle, retry and quiet-period waits keep their order but take no real time: 150 seconds on real timers becomes under one.
+  </Accordion>
+  <Accordion title="Progressive layout replay (npm run e2e)" icon="repeat">
+    Fills every recorded layout on the replay page in Playwright's Chromium and compares with `test/e2e-baseline.json`: fewer answers, a new failure, more unmapped questions, a lost Continue, or a page whose outcomes hash changed fails the run. `--renumber` shifts every question id as Progressive did on 2026-10-07; outcomes must stay the same. `--update` accepts new results after review.
+  </Accordion>
+  <Accordion title="AmWINS mock" icon="layers">
+    The Business Auto application saved from the live site, with client details and scripts removed, and `mock.js` playing the site's behavior: show/hide rules, Save & Continue, Import Data, the VIN decoder, Default all answers to No, the classification search. Fails on a wrong answer, an early stop, or Submit being clicked.
+  </Accordion>
+  <Accordion title="GEICO mock" icon="shield-check">
+    GEICO's quote as one page, built by `scripts/geico-fixture.mjs` from ignored saved pages and captures. `mock.js` plays the progress bar, shadow-root radios and buttons, select2 lists, new render numbers on every redraw, the VIN decoder, unit lists and Recalculate. The run plays the agent with real clicks and keys, and refuses every network request.
+  </Accordion>
+  <Accordion title="Luna mock" icon="sparkles">
+    The packaged extension against controlled OpenAI responses: key isolation, the automatic-pick setting, the approval hold and reload retention, rejection, conflicting evidence, stale responses, and that `manualOnly` facts never reach Luna. It makes no live AI requests.
+  </Accordion>
+  <Accordion title="Packaged extension end to end" icon="package">
+    `npm run e2e:extension` needs `npm run package` and `npm run replay` on port 8792. The real panel loads the sample intake, clears a client fact so it holds Continue, enters a synthetic agent answer through trusted input, and resumes. It checks retention after saves and reloads, stops at the declaration, and never submits.
+  </Accordion>
+  <Accordion title="Synthetic intake pool" icon="files">
+    `npm run test:intakes` reads the 100-case PDF pool in `dist/synthetic-intakes` (kept out of Git). VIN and DOT lookups come from its fixtures; no real carrier lookups are made.
+  </Accordion>
+</AccordionGroup>
+
+## CI
+
+| Workflow | Runs |
+| --- | --- |
+| `checks.yml` | Lint, type check, unit tests and packaging on Ubuntu, for pull requests |
+| `windows-smoke.yml` | Playwright on Windows: ZIP extraction, AmWINS (normal and reversed), GEICO mock, Progressive replays, Luna mock, packaged-extension end to end. Dispatched by hand only |
+| `claude-review.yml` | A Claude review when a PR opens; reads and comments only |
+| `claude.yml` | Answers `@claude` in PR and issue comments from people with write access |
+| `daily-review.yml` | The daily review, kept for when Actions runs again |
+
+<Note>
+GitHub bills this private repository's runs, and Actions isn't starting jobs on the account. Verify locally with `npm run ci`, which runs the Windows smoke steps in the same order; `npm run ci -- --quick` runs only lint, the type check, the unit tests and packaging.
+</Note>
+
+Source: [`docs/testing.md`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/docs/testing.md)

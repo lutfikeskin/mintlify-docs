@@ -1,0 +1,69 @@
+---
+title: "Releasing"
+description: "Package the extension, ship it through the private Chrome Web Store listing, and keep the server ahead of the extension."
+icon: "rocket"
+---
+
+<Warning>
+A local fix or a documentation change doesn't by itself authorize a version bump, an upload or a deploy. Release only when that's the requested outcome.
+</Warning>
+
+## The release path
+
+<div className="pele-diagram">
+```text
+flowchart TB
+  subgraph PREP["Prepare"]
+    direction LR
+    A["Tested, merged<br/>on main"] --> B["Raise the version<br/>manifest + package"] --> C["npm run package<br/>from a clean tree"]
+  end
+  subgraph SHIP["Ship"]
+    direction LR
+    E["New event fields?<br/>deploy the server first"] --> F["Upload the zip,<br/>submit"] --> G["Store<br/>review"] --> H(["Agents' Chrome<br/>auto-updates"])
+  end
+  PREP --> SHIP
+```
+</div>
+
+<Steps>
+  <Step title="Version">
+    Raise `version` in `manifest.json` and `package.json` together, and update the lockfile's package metadata. The store refuses a version it already has.
+  </Step>
+  <Step title="Package from a clean tree">
+    ```bash
+    npm test
+    npm run package    # -> dist/tni-rater-autofill-<version>.zip
+    ```
+    Usage events name the commit a copy was packaged from, with `+dirty` for uncommitted changes, so package from a committed tree. The zip holds only `manifest.json`, `background.js`, `icons/`, `lib/`, `sidepanel/` and `src/`. Only the unpacked copy carries the fixed development key; the store zip must not.
+  </Step>
+  <Step title="Server first">
+    If the release sends new event fields, deploy the server that accepts them and check it with `node scripts/server-check.mjs` before uploading.
+  </Step>
+  <Step title="Upload and submit">
+    Upload the zip on the item's **Package** tab in the Chrome Web Store Developer Dashboard and submit. Reviews take from a few hours to a few days.
+  </Step>
+</Steps>
+
+## The store listing
+
+The listing is **private**: published to the TNI domain or to named trusted testers, or unlisted. Agents install with one click and get updates without Developer mode.
+
+| Permission | Why it's declared |
+| --- | --- |
+| `sidePanel` | The interface is a side panel next to the quote page |
+| `scripting` | Fills and highlights fields on the carrier page the agent is viewing |
+| `storage` | The session's intake and the agent's settings |
+| `unlimitedStorage` | Keeps the usage log while the server can't be reached |
+| Carrier hosts | foragentsonly.com, progressive.com, amwinsadmittedplacement.com, geico.com |
+| `api.openai.com` | Luna suggestions, the claims-box review, the first-name check, with the agent's own key |
+| The usage server | TNI's usage log |
+
+<Note>
+The store's data-usage answers declare what the extension handles, including drivers' first names sent to OpenAI and the business profile sent to TNI's server. TNI's compliance owner confirms them, and the certification about purposes beyond filling quotes, before a version that sends the profile is uploaded.
+</Note>
+
+## After install
+
+Each agent, once: **Settings → You → Your initials**, then optionally **Settings → Assistant → Add key** and **Suggest answers**. Leave **Put checked picks in for me** off for the first weeks of a pilot.
+
+Source: [`docs/chrome-web-store.md`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/docs/chrome-web-store.md), [`docs/testing.md`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/docs/testing.md#ci-and-authorized-releases)

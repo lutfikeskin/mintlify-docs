@@ -1,0 +1,101 @@
+---
+title: "The learning loop"
+description: "How live quotes become reviewed rule changes: the review scripts, what the learner infers, page captures, and measuring a change before release."
+icon: "refresh-cw"
+---
+
+This is **reviewed software improvement**, not model training. Usage events, comments and AI accept or reject decisions help a person review; they never rewrite prompts, rules or model weights by themselves.
+
+<div className="pele-diagram">
+```text
+flowchart TB
+  subgraph COLLECT["Collect"]
+    direction LR
+    A["Agent edits,<br/>problem reports"] --> B["Usage events<br/>and layouts"] --> C[("Collection<br/>server")]
+  end
+  subgraph REVIEW["Review"]
+    direction LR
+    D["npm run pull, then<br/>review, signals, learn"] --> E{{"Human review of<br/>evidence and scope"}} --> L["Ledger issue:<br/>approved items"]
+  end
+  subgraph SHIP["Fix and ship"]
+    direction LR
+    F["Code change +<br/>regression checks"] --> G["Benchmark on<br/>recorded quotes"] --> H["Authorized<br/>release"]
+  end
+  COLLECT --> REVIEW --> SHIP
+  SHIP -. "npm run ledger: verified,<br/>recurred, not exercised" .-> REVIEW
+```
+</div>
+
+## The review scripts
+
+Every script reads the pulled server folder, exported logs, or both.
+
+| Command | Produces |
+| --- | --- |
+| `npm run pull` | All events into `server-data/events/` (`--since <date>` for a window) |
+| `npm run review` | One Markdown report (`reviews/review-<date>.md`): everything below, AI accept/reject per question, and problem reports |
+| `npm run learn` | Rule suggestions: standard answers, per-state answers, intake mappings, rules agents keep correcting |
+| `npm run layouts` | Carrier page layouts per state and product, into `captures/<carrier>/generated/` |
+| `npm run transitions` | When follow-up questions show, answers not seen yet, what changed after an answer |
+| `npm run captures` | Manual captures per scenario, in order, with what changed between them |
+| `npm run summary` | Intake problems, corrections, failures, time per page |
+| `npm run signals` | Weekly numbers per quote, the builds that logged the period, how far quotes got, what held Continue |
+| `npm run ledger` | The open `weekly-review` issue's items: which builds carry each fix, and whether it held |
+| `npm run coverage` | Which questions have rules, and which don't |
+| `npm run benchmark` | Today's rules replayed on recorded quotes, against what agents left |
+| `npm run key:sheet` | A review page for building TNI's answer key |
+
+## What the learner infers
+
+| Candidate | Default criterion in `learn()` |
+| --- | --- |
+| Standard answer | At least 5 intake PDFs, at least 90% choose one answer |
+| State-specific answers | The overall standard fails; several states, each with at least 2 answers and 90% agreement |
+| Intake mapping for a text field | At least 5 intake PDFs, at least 80% match the same intake path |
+| Review an existing rule | Autofilled in quotes of at least 5 PDFs, at least 20% of those corrected |
+| Question agents leave as the page answers it | Unmapped, left to the agent, the page's answer stood in quotes of at least 5 PDFs, 90% the same: suggested as a `note` rule, never `ignore` |
+
+Support counts different intake PDFs by fingerprint, so a sample retried many times counts once. These are review thresholds, not correctness probabilities.
+
+<Warning>
+A consistent answer isn't always a correct one. Don't promote a majority answer over a legitimate minority exception, and review every line `learn` prints before pasting it into a carrier module.
+</Warning>
+
+## Page captures
+
+Automatic layouts show what a page looked like; manual captures show **why it changed**.
+
+<Steps>
+  <Step title="Name a scenario">
+    Load the client's intake (its names and numbers are what get redacted), open a rater page, and under **Settings → Advanced** type a **Scenario** such as "FL van, hazmat" and a **Note** such as "set hazmat to Yes".
+  </Step>
+  <Step title="Capture, change one answer, capture again">
+    **Capture page layout**, or **Alt+Shift+C** with the panel open (it works with a dropdown open). Each capture is a numbered JSON file in Downloads, `capture-<carrier>-<scenario>-<quote>-001-<page>.json`, never uploaded.
+  </Step>
+  <Step title="Report">
+    Move the files to `layouts/` and run `npm run captures`. `reviews/captures-<date>.md` lists each scenario in order with what changed since the last capture of the same page.
+  </Step>
+</Steps>
+
+## Measuring a rule change before release
+
+<div className="pele-diagram">
+```text
+flowchart LR
+  M["main:<br/>--save"] --> B["branch:<br/>--against"]
+  K[("Answer<br/>key")] -. "--key" .-> B
+  B --> R["agree, differ,<br/>unsure, blank"]
+  B -. "with a key" .-> S["right, wrong,<br/>missed, invented"]
+```
+</div>
+
+- `npm run benchmark -- --intakes <folder>` replays recorded quotes through today's rules without a browser. Intake PDFs are matched by fingerprint and never copied.
+- Agreement with past agents is a proxy, not proof of a correct answer.
+- **TNI's answer key** replaces that proxy for about ten real quotes a TNI reviewer checked. With `--key`, the report counts right, wrong, missed and invented answers. Invented must be 0.
+- The key, its review sheet and the PDFs hold client answers, so they live in ignored `layouts/`.
+
+## The weekly cycle
+
+Two project skills run the cycle with a coding agent: **weekly-review** reads a period of live runs and writes a prioritized decision brief for the maintainer, and **apply-review-fixes** implements the items the maintainer approved, one PR per coherent change, and records what to watch on the ledger issue. See [Fixing a reported problem](/ai-and-learning/corrections).
+
+Source: [`docs/learning.md`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/docs/learning.md)

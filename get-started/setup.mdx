@@ -1,0 +1,100 @@
+---
+title: "Set up a development copy"
+sidebarTitle: "Setup"
+description: "Install the tools, build the extension, load it in Chrome and run the checks."
+icon: "terminal"
+---
+
+The extension is plain JavaScript with no build step for its source. `npm run package` only copies the files Chrome runs into `dist/` and stamps them with the build.
+
+## Before you start
+
+| Tool | Version | Why |
+| --- | --- | --- |
+| Node.js | 22 (the CI version) | Tests, packaging, scripts, the local server |
+| Chrome | 140 or newer | The manifest's `minimum_chrome_version`; needed for trusted-only local storage |
+| Git | any | Task branches; `.gitattributes` keeps line endings consistent on Windows |
+
+WSL, Python, `cp` and a system `zip` aren't needed. Browser checks install their own Playwright Chromium.
+
+## Build and load
+
+<Steps>
+  <Step title="Clone and install">
+    ```bash
+    git clone https://github.com/lutfikeskin/tni-rater-autofill.git
+    cd tni-rater-autofill
+    npm ci
+    npx playwright install chromium
+    ```
+  </Step>
+  <Step title="Run the unit tests and package">
+    ```bash
+    npm test
+    npm run package
+    ```
+    `npm run package` writes the Web Store zip and an unpacked copy, `dist/tni-rater-autofill`.
+  </Step>
+  <Step title="Load the unpacked copy">
+    Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick `dist/tni-rater-autofill`.
+
+    That copy has a fixed extension ID (`cbpjccegchfackokbiogplhdekblkccj`), so its settings, including the OpenAI key, survive removing and loading it again. The store zip doesn't carry that key.
+  </Step>
+  <Step title="Open the panel and set yourself up">
+    Pin the extension and click its icon. In **Settings** (the gear), enter your initials under **You**.
+
+    For local work, set **Settings → Advanced, for setup only → Server** to `http://localhost:8787` and run `npm run server`. Leave it blank to turn uploads off. The default is TNI's production server.
+  </Step>
+  <Step title="Mark practice quotes">
+    For a practice or test quote, tick **This intake is a test run, not a client** under **Advanced**. The weekly review leaves it out of its numbers.
+  </Step>
+</Steps>
+
+## Edit, rebuild, reload
+
+After a source edit, run `npm run package` again, click the extension's reload button, and reopen the side panel.
+
+Open carrier pages don't need a refresh. Every build is stamped, so the fill scripts left in a page are replaced on the next fill, and the usage recorder when the panel next follows the tab.
+
+## Try it without the extension
+
+```bash
+npm run replay
+```
+
+- `http://localhost:8792/test/mock-rater/` is a generic React-style rater page the fill engine can work.
+- `http://localhost:8792/test/replay/` rebuilds Progressive pages from recorded layouts and runs the real fill engine on them.
+- `http://localhost:8792/sidepanel/sidepanel.html` opens the side panel in preview mode. Loading and reviewing an intake work there; filling doesn't.
+
+## Checks before a pull request
+
+```bash
+npm run lint
+npm run typecheck
+npm test
+npm run ci          # the Windows smoke steps, locally
+```
+
+[Testing](/dev-workflow/testing) says which browser checks each kind of change needs.
+
+<AccordionGroup>
+  <Accordion title="Windows notes" icon="monitor">
+    Use native PowerShell, Git and Node.js 22.
+
+    - If PowerShell blocks `npm.ps1` or `npx.ps1`, use `npm.cmd` and `npx.cmd`. No execution-policy change is needed.
+    - The two PDF.js files in `lib/` are committed. `npm run vendor` only refreshes them after a dependency update.
+    - Don't copy `node_modules` from another computer.
+    - `npm run e2e:extension` needs `npm run replay` running in another terminal on port 8792.
+  </Accordion>
+  <Accordion title="What a clone doesn't contain" icon="lock">
+    These stay out of Git and aren't needed for ordinary development:
+
+    - `layouts/`: raw carrier HTML, PDFs and page captures.
+    - `server-data/`: production usage logs and the warehouse file.
+    - `dist/synthetic-intakes/`: the 100-case intake pool for `npm run test:intakes`. It holds a source-intake VIN, so it moves between computers privately.
+    - Credentials: the OpenAI key, the upload and admin tokens, Chrome profiles.
+  </Accordion>
+  <Accordion title="Credentials you may need later" icon="key-round">
+    Unit tests, browser mocks and fixture replays need none. Real AI use needs an OpenAI key in the panel. Reading production logs needs the admin token, as `RATER_ADMIN_TOKEN` or in `~/.config/tni-rater/admin-token`. Never commit any of them.
+  </Accordion>
+</AccordionGroup>

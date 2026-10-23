@@ -1,0 +1,71 @@
+---
+title: "Data and privacy"
+description: "Where client data lives on the agent's computer, what leaves it, and how it's redacted on the way."
+icon: "lock"
+---
+
+## Where data lives
+
+| Data | Where | Cleared |
+| --- | --- | --- |
+| Client record and the intake PDF (up to 4 MB, for the PDF view) | `chrome.storage.session` | When Chrome closes, or **Clear this client** |
+| Settings, including the OpenAI key and initials | `chrome.storage.local`, trusted contexts only | When the extension is removed |
+| The agent's corrections and protected field keys | `chrome.storage.local` | Per intake; **Clear** erases the current intake's |
+| Pending AI decisions | `chrome.storage.local` | When approved, rejected and settled, or the quote is gone |
+| Usage queue | `chrome.storage.local` | After the server acknowledges each event |
+| Test-run fingerprints (at most 200) | `chrome.storage.local` | Kept on that computer |
+| Page captures | The agent's Downloads folder, as JSON | Moved by hand to the ignored `layouts/` |
+
+Loading the same PDF again keeps the agent's corrections and checks. A different PDF starts over, and **Change file** asks first once anything was corrected.
+
+## What leaves the computer
+
+<div className="pele-diagram">
+```text
+flowchart LR
+  REC["Client record"] --> CARRIER(["Carrier website<br/>the answers themselves"])
+  REC --> RED1["Redact: names, DOBs, street,<br/>city, ZIP, contacts, IDs → [client]<br/>drop VIN, license, FEIN, phone…"]
+  RED1 --> OPENAI(["OpenAI<br/>only with the assistant on"])
+  REC --> RED2["Build events:<br/>no names, numbers, addresses,<br/>no typed text"]
+  RED2 --> SERVER(["TNI collection server"])
+  REC -. "first names only,<br/>own request" .-> OPENAI
+```
+</div>
+
+### To OpenAI, with the assistant on
+
+What goes, after redaction (`scopedIntake`, `redactionTerms`):
+
+- The unresolved questions, with their labels, sections, current values and option texts, as the page shows them.
+- The carrier-scoped TNI rules.
+- The scoped intake: business, operations, garaging, coverage, claims, notes, trailer and prior-insurance sections, and the active driver, vehicle and trailer.
+
+Identifier keys are removed (VIN, license and plate numbers, FEIN, phone, email, account numbers). USDOT and MC become yes/no. Every remaining string has the client's names, dates of birth, street, unit, city, ZIP, contact and ID numbers replaced by `[client]`.
+
+Still sent in clear: the garaging state, business class and operations answers, coverage choices and limits, vehicle details, the driver's license state and CDL, and the prior carrier.
+
+<Warning>
+Redaction matches values **as written in the intake's fields**. Written another way in the notes, such as `1/2/1980` for `01/02/1980`, a value may still be sent.
+</Warning>
+
+One exception to name redaction: so Luna can flag a driver whose gender may not be the standard Male, drivers' first names (the first word only) go **alone in a separate request**, with no last name, date of birth or other intake data.
+
+### To TNI's server
+
+Usage events describe how the extension was used: which page, what was filled, kept or failed and why, chosen options (not typed text), and a profile of the client's business without names, numbers or addresses. See [Usage events](/ai-and-learning/usage-events) for the full list.
+
+**Never recorded:** client names, numbers, addresses, anything typed into text boxes, screenshots, keystrokes or other websites. The exceptions are what an agent types into **Report a problem on this page**, and the business profile.
+
+<Note>
+Client data reaching TNI's collection server, its logs, or OpenAI isn't a leak: licensed TNI agents use the extension and TNI runs the server. Credentials stay out of logs, and client values stay out of the repository.
+</Note>
+
+## Page captures
+
+Captures for mapping a carrier contain **no typed values**. Client names and numbers are replaced with `[client]`, which is why a capture needs a loaded intake. A dropdown list keeps its choices only when it's a fixed list of a known question; lookups filled from typed text keep none. Nothing is uploaded.
+
+## In the repository
+
+Raw carrier HTML, PDFs and client captures stay in the ignored `layouts/`. Committed fixtures are scrubbed; GEICO's fixture builder writes nothing if it finds anything that looks like client, agent or session data.
+
+Source: [`README.md`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/README.md) and [`docs/ai-assistant.md`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/docs/ai-assistant.md)

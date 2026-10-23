@@ -1,0 +1,63 @@
+---
+title: "Daily review"
+description: "The morning check that downloads the log, looks for anything new, and comments on a GitHub issue only when there's something to say."
+icon: "calendar-clock"
+---
+
+Every morning the daily review downloads the log and reviews the events the server received since the last successful run began downloading. A late upload lands in the next review, and none is in two.
+
+<div className="pele-diagram">
+```text
+flowchart TD
+  START([npm run daily -- --post]) --> CHECK["server-check:<br/>deployed server = repository's?"]
+  CHECK --> PULL["npm run pull<br/>from the day before the window"]
+  PULL --> REVIEW["review.mjs --since start --summary"]
+  REVIEW --> NEW{"Anything new?"}
+  NEW -- no --> QUIET["No comment"]
+  NEW -- yes --> POST["Comment on the open<br/>daily-review issue<br/>(or open one)"]
+  POST --> STATE["Write reviews/daily/state.json<br/>(where the next run starts)"]
+  QUIET --> STATE
+  CHECK -. "a step fails" .-> FAIL["Say which step stopped<br/>on the issue, exit 1,<br/>state unchanged"]
+```
+</div>
+
+## What counts as new
+
+- Problem reports, each with the build that logged it, marked when they came from a test run.
+- Questions without a rule, first seen in a layout of the period, one per question.
+- A deployed usage server that isn't the repository's: redeploy it.
+- Two days without any event received, test runs aside.
+- A run that couldn't finish, because the server was down or a script broke.
+
+Closing the issue is how a reviewer says it's been read; the next new item opens another. The review doesn't implement or deploy anything.
+
+## Running it
+
+GitHub hasn't started Actions jobs on this account since 2026-10-19, so the review runs on the maintainer's computer with [`scripts/daily.mjs`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/scripts/daily.mjs). It needs Node 22, the admin token and `gh auth login`.
+
+```powershell
+npm run daily                                         # dry run: prints the comment, posts nothing
+npm run daily -- --post                               # posts, since the last run here
+npm run daily -- --no-pull --data path\to\server-data # dry run on a log as it is
+```
+
+- It posts only with `--post`, so trying it out never comments by accident.
+- `--post` refuses unless it runs in the main checkout, on the default branch, level with `origin`.
+- `reviews/daily/state.json` is written only after the post step succeeds. A failed run leaves it, so the next one reviews the period again.
+- Runs go one at a time (`reviews/daily/run.lock`); every run is logged in `reviews/daily/daily.log`.
+
+<Accordion title="Schedule it with Windows Task Scheduler" icon="clock">
+  ```powershell
+  $at       = [DateTime]::UtcNow.Date.AddHours(6).ToLocalTime()   # 06:00 UTC, in local time
+  $action   = New-ScheduledTaskAction -Execute (Get-Command node).Source -Argument 'scripts\daily.mjs --post' -WorkingDirectory (Get-Location).Path
+  $trigger  = New-ScheduledTaskTrigger -Daily -At $at
+  $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
+  Register-ScheduledTask -TaskName 'TNI daily review' -Action $action -Trigger $trigger -Settings $settings
+  ```
+
+  Run it from PowerShell in the main checkout. It runs as you, while you're signed in. `Unregister-ScheduledTask -TaskName 'TNI daily review'` removes it. Use one schedule, not this and the GitHub workflow both.
+</Accordion>
+
+The GitHub workflow, `.github/workflows/daily-review.yml`, stays in the repository for when Actions works again. Before switching back, stop the local schedule and start its first run by hand from the local `state.json`'s `since`.
+
+Source: [`docs/hosting.md`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/docs/hosting.md#daily-review)

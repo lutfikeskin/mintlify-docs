@@ -1,0 +1,70 @@
+---
+title: "Adding a carrier"
+description: "Capture a carrier's pages, write its adapter, and validate it with a mock before a supervised pilot."
+icon: "circle-plus"
+---
+
+A generic label match isn't evidence of support. Adding a carrier, product, state, or a materially different vehicle or coverage flow follows the same path.
+
+<div className="pele-diagram">
+```text
+flowchart TB
+  subgraph LEARN["Learn the carrier"]
+    direction LR
+    S["Define the scope<br/>states, classes,<br/>vehicles, coverages"] --> C["Capture pages<br/>and follow-ups"] --> M["Map each question<br/>to a stable locator"]
+  end
+  subgraph BUILD["Build and prove"]
+    direction LR
+    A["Write the adapter<br/>src/carriers/x.js"] --> V["Mock or replay<br/>with expected answers"] --> P["Supervised pilot<br/>on live quotes"]
+  end
+  LEARN --> BUILD
+  BUILD -. "coverage report and agent<br/>reports: the next scenario" .-> LEARN
+```
+</div>
+
+## Capture the behavior
+
+Name a scenario under **Settings → Advanced**, capture the page (**Capture page layout** or **Alt+Shift+C**), change one answer, capture again. `npm run captures` then lists the before and after of each step. Saved pages go in the ignored `layouts/`; derived fixtures are scrubbed.
+
+For each question, record:
+
+- **A locator the carrier's own code depends on**: a data-model name, element id or name, or data-id, scoped to its page or step. Text is the fallback and the check. A generated number, a position or a label alone is never a locator.
+- Its meaning, options, where the answer comes from, the entity it's about, when it applies, and what's left undecided.
+
+## Write the adapter
+
+<Steps>
+  <Step title="Register the module">
+    Add `src/carriers/<carrier>.js`, register it in `carriers.js`, and add its hosts to `manifest.json`. Keep `autoFillUrl` and `layoutUrl` to the quote's own pages. List the module in `RULE_FILES` in `src/usage.js`, and the intake fields it doesn't read in the provenance test.
+  </Step>
+  <Step title="Type it">
+    Start the module with `// @ts-check` and type its export `/** @type {CarrierConfig} */`, so `npm run typecheck` catches a misspelled key. A new option goes into `types.js` with what it does.
+  </Step>
+  <Step title="Map facts and approved standards">
+    Decide whether generic label rules suit the carrier (`useGenericRules`, `rowSections`). A carrier with no TNI standard has no `standard` rule and no `supportedClasses`: everything the intake doesn't answer is the agent's.
+  </Step>
+  <Step title="Implement controls and helpers">
+    Use the `MAIN` world only when the page's widgets require it. Turn on `batch` only with evidence. Keep each helper to its steps, give it a `verify` so a click that showed nothing isn't counted, and name the agent's steps (`stopSteps`, `stopPages`, `stopButtons`).
+  </Step>
+  <Step title="Tell repeated units apart">
+    Find rows by a witness they show, not by position. On a step with one unit's form at a time, name the form by a question only it asks.
+  </Step>
+  <Step title="Steps for the panel">
+    List the quote's observed step order as `quoteSteps` for the panel's page strip; a one-address application lists its step names as `layoutSteps`.
+  </Step>
+  <Step title="AI, if in scope">
+    Add the carrier's standards to `src/ai/tni-rules.js` and teach `evidenceFor` in `src/ai/common.js` to give that section to the carrier.
+  </Step>
+</Steps>
+
+## Validate and expand
+
+| Pattern | Used by | What it proves |
+| --- | --- | --- |
+| Layout replay | Progressive (`npm run e2e`) | The engine fills server-backed pages rebuilt from recorded structure |
+| Saved-page behavior mock | AmWINS (`npm run mock:amwins`) | Expected answers, branches, continuation and no submission on the saved site |
+| One-file single-page fixture | GEICO (`npm run mock:geico`) | Steps, shadow DOM, redraws, unit forms and stop steps; the builder refuses to write on a privacy finding |
+
+Include expected answers, branch triggers, rejections and redraws, manual corrections, missing information, and a check that nothing is finally submitted. Mock success doesn't prove live backend acceptance or complete coverage. Use a supervised pilot for live-only behavior, then `npm run coverage` and agent reports to expand.
+
+Source: [`docs/new-carrier.md`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/docs/new-carrier.md)

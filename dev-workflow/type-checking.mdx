@@ -1,0 +1,75 @@
+---
+title: "Type checking"
+description: "Gradual JSDoc types on the JavaScript as it runs: no .ts files, no build step, and the shapes passed between parts declared once in types.js."
+icon: "braces"
+---
+
+`npm run typecheck` runs TypeScript's checker (`tsc -p .`) over the JavaScript **as it is**. Nothing is compiled or emitted; Chrome, the tests and the package keep using the files unchanged.
+
+## How it's set up
+
+- `tsconfig.json` reads every JavaScript file of the extension, server, scripts and tests (`allowJs`, `noEmit`), but `checkJs` is off.
+- A file opts in with `// @ts-check` as its first line. Today that's `plan.js`, `usage.js`, `normalize.js`, `carriers.js`, the three carrier modules, and `types.js` itself.
+- Files under `server/`, `scripts/` or `test/` run on Node. Opting one in needs `@types/node`, which isn't installed yet.
+
+## The shared shapes
+
+[`types.js`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/types.js) sits at the repository's root, outside the package, and holds only JSDoc typedefs.
+
+<div className="pele-diagram">
+```text
+classDiagram
+  direction LR
+  class CarrierConfig {
+    hosts, world
+    rules, actions
+    advance
+    stopSteps
+  }
+  class CarrierRule {
+    field, ask
+    path, value()
+    source
+    note, warn
+  }
+  class PlanStep {
+    value
+    source
+    standard
+    manualOnly
+  }
+  class FillReport {
+    filled, kept
+    failed, noData
+    blockers
+    stepKey
+  }
+  CarrierConfig o-- CarrierRule
+  CarrierRule ..> PlanStep : buildPlan
+  PlanStep ..> FillReport : fill
+```
+</div>
+
+The usage events `src/usage.js` builds from the report (`FillRunEvent`, `FillFieldEvent`, `FieldChangeEvent`, `IntakeProfileEvent` and the rest) are declared there too, as are `CarrierAction`, `CarrierAdvance`, `QuoteStep` and `FillOptions`.
+
+A misspelled or undeclared key in a carrier's rule, a report or event field read under an old name, or a value of the wrong kind fails the check.
+
+## Adding a field
+
+<Steps>
+  <Step title="Declare it">
+    Add the carrier option, plan step, report or event field to its typedef in `types.js`, with a comment saying what it does.
+  </Step>
+  <Step title="Type with comments only">
+    A cast is `/** @type {X} */ (value)`, which adds parentheses to the code and nothing else.
+  </Step>
+  <Step title="Run the check">
+    ```bash
+    npm run typecheck
+    ```
+  </Step>
+</Steps>
+
+In a carrier module, type the export `/** @type {CarrierConfig} */`. A helper that builds rules returns `CarrierRule[]`; a `.map(...)` callback that builds one is `/** @returns {CarrierRule} */`, because a list placed in front of `.map(...)` isn't checked.
+
+Source: [`docs/testing.md`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/docs/testing.md)

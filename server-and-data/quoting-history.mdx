@@ -1,0 +1,133 @@
+---
+title: "Quoting history database"
+sidebarTitle: "Quoting history"
+description: "A DuckDB warehouse on the maintainer's computer, rebuilt from the pulled log, for business questions about TNI's quoting."
+icon: "database"
+---
+
+<Info>
+**Status:** the warehouse is built and runs locally. The intake profile that fills most of its columns waits on approval of the privacy text; until that release, profile columns are empty.
+</Info>
+
+## What it's for
+
+Business questions rather than fixes: which states clients come from, which business classes TNI quotes, what fleets look like, which coverages and limits clients ask for and which are chosen on each carrier, who insured them before, how it all moves over time, and later, what the carriers quoted.
+
+## Design
+
+<div className="pele-diagram">
+```text
+flowchart TB
+  subgraph RW["On Railway"]
+    direction LR
+    EXT["Extension"] -- "events" --> SRV[("JSONL files<br/>source of record")]
+  end
+  subgraph PC["On the maintainer's computer"]
+    direction LR
+    LOCAL["server-data/"] -- "npm run<br/>warehouse" --> DUCK[("warehouse<br/>.duckdb")] --> SQL(["duckdb<br/>-readonly"])
+  end
+  RW -- "npm run pull" --> PC
+```
+</div>
+
+<CardGroup cols={2}>
+  <Card title="The JSONL stays the source of record" icon="file-json">
+    Each run rebuilds the whole file from the pulled log, about 3 seconds for 33,000 events. A warehouse bug costs a rebuild, never data.
+  </Card>
+  <Card title="One definition of a quote" icon="equal">
+    Tables are computed with the same `scripts/lib` functions the weekly review uses, so the numbers agree.
+  </Card>
+  <Card title="It collects nothing itself" icon="ban">
+    Everything in it arrived as an event. New data is an extension and server change with its own review.
+  </Card>
+  <Card title="It stays on one computer" icon="hard-drive">
+    One git-ignored file, no server, port or password. It holds client data: don't copy, attach or commit it.
+  </Card>
+</CardGroup>
+
+## Tables
+
+<div className="pele-diagram">
+```text
+erDiagram
+  quotes ||--o{ quote_vehicles : "units"
+  quotes ||--o{ quote_drivers : drivers
+  quotes ||--o{ quote_prior_insurance : "prior policies"
+  quotes ||--o{ quote_carriers : "worked on"
+  quote_carriers ||--o{ answers : "final answers"
+  quote_carriers ||--o{ quote_premiums : "premiums quoted"
+  events }o--|| quotes : "session"
+  quotes {
+    string session
+    string state
+    string business_class
+    json profile
+  }
+  quote_carriers {
+    string carrier
+    string outcome
+    string last_page
+  }
+  answers {
+    string question
+    string answered_by
+    string rule_source
+    string value
+  }
+  quote_premiums {
+    number total
+    int term_months
+  }
+```
+</div>
+
+| Table | One row per |
+| --- | --- |
+| `events` | Event, once per id, as stored |
+| `quotes` / `v_quotes` | Quote; the view leaves out test runs. **Start here.** |
+| `quote_vehicles`, `quote_drivers`, `quote_prior_insurance` | Unit or policy on the profile |
+| `quote_carriers` | Quote and carrier it was worked on; `outcome` is `done`, `declined` or `stopped` |
+| `quote_premiums` / `v_quote_premium` | Each premium reading; the view keeps the last per quote and carrier |
+| `answers` | Question and unit a quote answered on a carrier; `answered_by` and `rule_source` |
+| `build_info` | The run that built the file |
+
+Column notes live in `TABLES` in [`warehouse.mjs`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/scripts/lib/warehouse.mjs) and in the file itself:
+
+```sql
+SELECT column_name, comment FROM duckdb_columns() WHERE table_name = 'quotes';
+```
+
+## Build and query
+
+```bash
+npm run pull
+npm run warehouse
+duckdb -readonly server-data/warehouse.duckdb
+```
+
+It refuses to run without a test-run list (`reviews/test-intakes.txt`, or `--tests <file>`), so the maintainer's test quotes never count as clients. Install the DuckDB command line with `winget install DuckDB.cli`, at the same version as `@duckdb/node-api` (1.5.6) or newer.
+
+Where clients come from, by month. `intakes` counts distinct PDFs, so a client re-quoted from the same PDF counts once:
+
+```sql
+SELECT date_trunc('month', started_at)::date AS month,
+       coalesce(state, '(none)') AS state,
+       count(*) AS quotes,
+       count(DISTINCT intake_id) AS intakes
+FROM v_quotes
+GROUP BY 1, 2
+ORDER BY 1, 3 DESC;
+```
+
+The repository's document has more examples: business classes, the fleet, drivers, a renewal calendar by prior insurer, and coverage chosen per carrier split by who chose it. `test/warehouse.test.mjs` runs every one of them, so a renamed column fails the tests.
+
+## Limits
+
+- **Only quotes run through the extension.** Hand-typed quotes, other carriers and renewals done elsewhere never reach it.
+- **No ZIPs, names, VINs or numbers**, by design. State is the finest geography. That's not anonymity.
+- **The intake's word, not the policy's.** A limit changed later on the carrier's page shows in `answers`, not the profile.
+- **No bind data.** "Done" means the quote reached the final page or was printed.
+- **A quote is a panel session, not a client.** The same PDF keeps its `intake_id`.
+- **Premiums are quoted, never bound**, and GEICO's numbers are provisional until checked against real quotes.
+
+Source: [`docs/quoting-history-database.md`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/docs/quoting-history-database.md)

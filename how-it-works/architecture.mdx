@@ -1,0 +1,123 @@
+---
+title: "Architecture"
+description: "The extension's parts, the JavaScript worlds they run in, and the three separate paths data takes."
+icon: "network"
+---
+
+## The parts
+
+<div className="pele-diagram">
+```text
+flowchart TB
+  subgraph PANEL["Side panel: an extension page"]
+    direction TB
+    SP["sidepanel.js"]
+    PLAN["intake → plan"]
+    AI["ai/luna.js"]
+    UL["usage-log.js"]
+  end
+  subgraph TAB["Carrier quote tab: every frame"]
+    direction TB
+    FK["field-key.js"]
+    KIT["pagekit.js"]
+    REC["recorder.js"]
+    PRESS["page-press.js"]
+  end
+  subgraph OUT["Outside Chrome"]
+    direction TB
+    OPENAI(["OpenAI"])
+    SRV(["TNI server"])
+  end
+  PANEL -- "inject + plan" --> TAB
+  TAB -- "report, changes" --> PANEL
+  PANEL -- "redacted" --> OUT
+```
+</div>
+
+| Part | Runs in | Job |
+| --- | --- | --- |
+| `background.js` | Service worker (not drawn) | Opens the panel from the toolbar icon. Sets local storage to trusted contexts only, so scripts in carrier pages can't read the OpenAI key or upload token. |
+| `sidepanel.js` | Extension page | Loads the intake, builds a plan per page, injects the fill engine into every frame of the quote tab, renders the report, runs AI requests, decides when to fill automatically and when to click Continue. |
+| `pagekit.js` | Carrier tab | The fill engine. Finds controls, assigns rules, answers, waits for the page, reads answers back, rescans for follow-ups, marks fields, captures layouts. A classic script without imports; bump `__raterKit.version` when its API changes. |
+| `recorder.js` | Carrier tab, isolated world | Watches the page and reports changes made by the agent or by the page itself. |
+| `field-key.js` | Before pagekit and the recorder, in each one's world | Gives every control a stable key, so an agent's edit stays protected across fills and redraws. |
+| `page-press.js` | GEICO, page's own world | Presses GEICO's buttons as a mouse click would. |
+
+## Worlds
+
+A content script runs either in the extension's **isolated world**, which shares the page's DOM (open shadow roots included) but not its JavaScript objects, or in the page's **`MAIN` world**.
+
+- **Progressive** runs pagekit in `MAIN`, because its ExtJS widgets are only reachable through the page's own objects.
+- **AmWINS and GEICO** run in the isolated world (`worldFor` in the panel). GEICO's design-system radios and buttons are read through their open shadow roots.
+
+## Three data paths
+
+They're kept apart on purpose.
+
+<div className="pele-diagram">
+```text
+flowchart TB
+  subgraph A["1. The quote"]
+    I1["Intake record"] --> I2["Carrier page"]
+  end
+  subgraph B["2. AI suggestions (opt-in)"]
+    A1["Unresolved choice questions<br/>+ scoped, redacted intake"] --> A2(["OpenAI, agent's key"])
+  end
+  subgraph C["3. Usage log"]
+    U1["Redacted events<br/>(local queue)"] --> U2(["TNI collection server"])
+  end
+```
+</div>
+
+1. **The quote.** The client record and the intake PDF live in Chrome **session storage**, cleared when Chrome closes or the agent clicks **Clear this client**. Answers go into the carrier's site.
+2. **AI suggestions.** With the assistant on, unresolved choice questions, their options, carrier-scoped TNI rules and a scoped, redacted intake go to OpenAI with the agent's own key. See [AI assistant](/ai-and-learning/ai-assistant).
+3. **Usage log.** Events with client names, numbers and addresses left out queue in local storage and upload every minute to the collection server. See [Usage events](/ai-and-learning/usage-events).
+
+## What's in local storage, and how it changes
+
+Settings, the agent's corrections, helper records, pending AI decisions and the usage queue live in `chrome.storage.local`, under a version ([`storage-version.js`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/src/storage-version.js)).
+
+<div className="pele-diagram">
+```text
+stateDiagram-v2
+  [*] --> Read: panel opens
+  Read --> Current: data at this version
+  Read --> Newer: data from a newer build
+  Newer --> [*]: left as it is
+  Read --> Migrating: data from an older build
+  Migrating --> Migrating: one migration per version,<br/>written with its version in one write
+  Migrating --> Current: all versions done
+  Migrating --> Stopped: a migration fails
+  Stopped --> [*]: logged by version and error name,<br/>retried next time the panel opens
+  Current --> [*]
+```
+</div>
+
+- One copy of the panel migrates at a time, before anything reads the data.
+- Nothing resets to defaults: corrections, pending approvals and queued events are kept.
+- A migration writes its changes and its version together, then removes what it replaced. Stopping between the two leaves unused keys, never lost data.
+- To change a stored shape, add a migration and a saved copy of the version before it to `test/storage-version.test.mjs`.
+
+## Boundaries and known gaps
+
+<AccordionGroup>
+  <Accordion title="What the implementation guarantees" icon="check">
+    - The reader extracts named PDF form fields. It doesn't understand general documents or handwriting.
+    - Rules compute answers; the browser engine finds controls and checks that values stick. Carrier acceptance isn't semantic correctness.
+    - Every rule declares where its answer comes from. Facts and attestations the intake lacks are never filled.
+    - AI only assists unresolved choice questions. It doesn't audit answers the rules already filled.
+    - Feedback produces review material and candidate rules. Nothing trains a model or deploys a rule automatically.
+  </Accordion>
+  <Accordion title="Known gaps" icon="triangle-alert">
+    - Driver exclusion, per-vehicle coverage intent and driver-to-vehicle links aren't fully modeled.
+    - Free-text requests in the notes, such as non-trucking liability, have no complete extract, confirm and map path.
+    - There's no final check that the coverage entered matches the coverage requested.
+  </Accordion>
+  <Accordion title="Design direction, not yet guaranteed" icon="compass">
+    Represent confirmed facts with their source and entity. Separate shared concepts from carrier wording, then apply explicit state, product and entity conditions. Send conflicts and missing evidence to review; an unseen combination shouldn't be trusted because familiar questions matched.
+
+    Measure automatic-answer accuracy, the share automated and whole-quote correctness separately, against expert-reviewed answers. Mock results don't support a success-rate claim.
+  </Accordion>
+</AccordionGroup>
+
+Source: [`docs/architecture.md`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/docs/architecture.md)

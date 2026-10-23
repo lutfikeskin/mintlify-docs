@@ -1,20 +1,99 @@
 ---
-title: "Introduction"
-description: "Welcome to your project"
+title: "TNI Rater Autofill"
+sidebarTitle: "Overview"
+description: "A Chrome extension that turns a client's intake PDF into commercial auto quote answers on carrier raters, and leaves every unresolved decision visible to the agent."
+icon: "house"
 ---
 
-Write a short description of your product here. What it does, who it's for, and what they can accomplish with it.
+TNI Rater Autofill reads a client's **TNI Commercial Insurance Quote Application**, a fillable PDF, and fills the Progressive, AmWINS and GEICO quote pages from it. It runs as a Chrome extension (Manifest V3) with a side panel next to the carrier's page.
 
-<Tip>
-  Ready to make this your own? Start by editing this page. Update your `docs.json` file to customize your site. Then fill out the [Quickstart](/quickstart) page.
-</Tip>
+The goal is a **correct quote that reflects what the client asked for**, with every decision the extension can't make shown to the agent. A filled field, or a value the carrier accepted, doesn't prove the answer is right.
 
-<Card title="Quickstart" icon="rocket" href="/quickstart">
-  This card links to the quickstart page in your project.
-</Card>
-<Card title="Components" icon="puzzle-piece" href="https://mintlify.com/docs/components">
-  Add cards, callouts, steps, tabs, and more to design and structure your pages.
-</Card>
-<Card title="Settings" icon="gear" href="https://mintlify.com/docs/organize/settings">
-  Set your site name, branding, and navigation in the `docs.json` file.
-</Card>
+## The whole picture
+
+<div className="pele-diagram">
+```text
+flowchart TB
+  subgraph PANEL["In the side panel"]
+    direction LR
+    PDF[/"Intake PDF"/] --> READ["Read and clean:<br/>record + warnings"] --> CHECK["Agent checks<br/>the intake"] --> PLAN["Carrier rules build<br/>a fill plan"]
+  end
+  subgraph TAB["On the carrier page"]
+    direction LR
+    FILL["Fill engine answers,<br/>waits, reads back"] --> REPORT["Report: filled,<br/>standard, needs you"] --> AGENT(["Agent confirms<br/>and continues"])
+  end
+  subgraph AROUND["Around the quote"]
+    direction LR
+    LUNA["Luna AI suggests<br/>unresolved choices"]
+    SERVER[("TNI usage server<br/>redacted events")] --> REVIEW["Weekly review,<br/>tested releases"]
+  end
+  PANEL --> TAB
+  TAB -.-> AROUND
+```
+</div>
+
+1. The agent drops the intake PDF into the side panel. The extension reads its form fields into a **client record** and flags anything ambiguous.
+2. The agent fixes or confirms those flags on **Check intake**.
+3. On each carrier page, the carrier's **rules** turn the record into a **fill plan**: which question gets which answer, and why.
+4. The **fill engine** (`pagekit.js`), injected into the carrier tab, finds each question on the live page, answers it, waits for the page, reads the answer back and looks for follow-up questions.
+5. The panel's **report** says what was filled from the intake, what is a TNI standard, and what is left for the agent. Optional AI suggestions cover choice questions the rules leave open.
+6. Usage events, with client details redacted, go to TNI's server. A person reviews them each week, and the fixes they approve ship as tested releases.
+
+## What it never does
+
+<Warning>
+The extension never binds, buys, submits or signs. It never orders MVR or CLUE reports, and it never types an answer the intake doesn't support unless TNI has set a standard for it. It clicks Continue only when nothing on the page is left for the agent, and only where the carrier's configuration allows it.
+</Warning>
+
+## Carriers
+
+<Columns cols={3}>
+  <Card title="Progressive" icon="route" href="/carriers-and-rules/carriers#progressive">
+    Duck Creek pages. Questions found by data-model name, one answer per round.
+  </Card>
+  <Card title="AmWINS" icon="layers" href="/carriers-and-rules/carriers#amwins">
+    Five-step application on one address. Selectors, repeated rows, batch fills.
+  </Card>
+  <Card title="GEICO" icon="shield-check" href="/carriers-and-rules/carriers#geico">
+    Single-page app with shadow-DOM controls. Mapped from captures; first live runs October 2026.
+  </Card>
+</Columns>
+
+## Find your way
+
+<Columns cols={2}>
+  <Card title="Set up a development copy" icon="terminal" href="/get-started/setup">
+    Install, build, load the extension and run the checks.
+  </Card>
+  <Card title="Repository map" icon="folder-tree" href="/get-started/repository-map">
+    Every folder and the files that matter, and where to change what.
+  </Card>
+  <Card title="Architecture" icon="network" href="/how-it-works/architecture">
+    The parts, the worlds they run in, and the three data paths.
+  </Card>
+  <Card title="A fill, step by step" icon="workflow" href="/how-it-works/fill-lifecycle">
+    From Fill this page to Continue: the loop, the waits and the stops.
+  </Card>
+  <Card title="Rules and the fill plan" icon="list-checks" href="/carriers-and-rules/rules">
+    How an answer is chosen, and where it came from.
+  </Card>
+  <Card title="AI assistant" icon="sparkles" href="/ai-and-learning/ai-assistant">
+    What Luna sees, what it may pick, and the approval hold.
+  </Card>
+</Columns>
+
+## At a glance
+
+| | |
+| --- | --- |
+| Extension | Chrome MV3, side panel, version 0.9.20, Chrome 140 or newer |
+| Language | Plain JavaScript ES modules, no build step, gradual JSDoc type checking |
+| Intake reader | PDF.js, vendored in `lib/` (MV3 can't load remote code) |
+| AI | OpenAI `gpt-6-luna`, opt-in, with the agent's own key |
+| Server | Plain Node, no dependencies, on Railway; JSONL files per day |
+| Tests | `node:test` units, Playwright mocks and replays, packaged-extension end to end |
+| Source | [lutfikeskin/tni-rater-autofill](https://github.com/lutfikeskin/tni-rater-autofill) (private) |
+
+<Note>
+These pages explain how the project fits together. The repository's own documents in `docs/` hold the full rule-by-rule detail and stay the source of truth. Each page here links to the one it summarizes.
+</Note>

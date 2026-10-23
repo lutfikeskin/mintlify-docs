@@ -1,0 +1,108 @@
+---
+title: "Reading the intake"
+description: "How the fillable PDF becomes a client record with warnings, and the parsing rules behind the tricky answers."
+icon: "file-text"
+---
+
+## From PDF to record
+
+<div className="pele-diagram">
+```text
+flowchart TB
+  subgraph READ["Read"]
+    direction LR
+    PDF[/"Intake PDF"/] --> IN["intake.js<br/>form fields"] --> NORM["normalize.js<br/>clean, parse"]
+  end
+  subgraph OUT["What the panel gets"]
+    direction TB
+    REC["Client record<br/>All client details"]
+    WARN["Warnings<br/>Check intake"]
+    SRC["Answer places<br/>See in intake"]
+  end
+  READ --> OUT
+```
+</div>
+
+- [`intake.js`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/src/intake.js) reads the PDF's **named form fields**. It doesn't understand general documents, scans or handwriting.
+- [`normalize.js`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/src/normalize.js) builds the record and the warnings.
+- [`schema.js`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/src/schema.js) defines every editable field: its section, label and kind (`text`, `int`, `money`, `date`, `bool`, `state`, `phone`, `choice`, `textarea`).
+- [`intake-source.js`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/src/intake-source.js) remembers which form field each answer came from and where it's drawn on the PDF, for **See in intake**.
+
+## The record
+
+| Section | Holds |
+| --- | --- |
+| `applicant` | Company, USDOT, MC, FEIN, years in business, owners, whether the owner drives, contact |
+| `garaging` | Street, unit, city, state, ZIP |
+| `operations` | Business class, what they haul, radius, ELD, filings, hazmat, team driving, ownership, equipment value |
+| `drivers[]` | Name parts, suffix, date of birth, license, CDL, marital status, gender (not on the PDF), excluded |
+| `vehicles[]`, `trailers[]`, `trailerInfo` | Type, year, make, model, VIN, value; trailer questions |
+| `priorInsurance[]` | Current policies: type, carrier, limit, expiration |
+| `coverage` | Requested coverages and limits; `ntl` and `hasGl`, set by the agent |
+| `claims` | The claims box: whether there are claims, and its other lines as notes |
+| `notes` | The Additional Notes box (2026-10 form) |
+
+<Note>
+Unknown isn't No. A yes/no the intake leaves unanswered, or a dropdown left on **Select**, is `null`, and a rule must treat it as missing.
+</Note>
+
+## Form versions
+
+Every version of the form is read; `KNOWN_FIELDS` lists the fields of each.
+
+<div className="pele-diagram">
+```text
+timeline
+  title Intake form versions
+  Before 2026-10-02 : License plate field
+  2026-10-02 : Team driving / slip seating replaces the plate
+  2026-10-19 : Additional Notes box
+             : Loads to Canada question
+             : Other-insurance-products box removed
+             : One trailer interchange limit
+```
+</div>
+
+## Parsing rules worth knowing
+
+<AccordionGroup>
+  <Accordion title="Radius" icon="ruler">
+    `parseRadius` turns the radius box into `operations.radiusMiles`, keeping the text in `operations.radius`.
+
+    | Written | Read as |
+    | --- | --- |
+    | `100`, `100 miles` | 100 miles |
+    | `anywhere within 100 miles`, `OTR up to 500 miles` | 100, 500 (one explicit mileage wins) |
+    | `48 states`, `lower 48`, `unlimited`, `OTR`, `nationwide` | Long haul: no mileage, the carrier's widest band |
+    | a bare `48` | 48 miles |
+    | `100-500 miles`, `100 to 500` | No miles, `radius.range` check |
+    | kilometres, feet, nautical miles | No miles, `radius.unit` check |
+    | `around town`, `11 states`, `0` | No miles, `radius.not-miles` check |
+    | `500+`, `over 300` | A lower bound only: 500 and up is GEICO's "More than 500"; below that, the agent's |
+  </Accordion>
+  <Accordion title="The owner and the drivers" icon="user">
+    `owner()` matches the owner to a driver row by full name, or by surname only when the owner's first name is one of that driver's given names, so owner "Alice Sample" isn't driver "Bob Sample". When the intake says the owner doesn't drive, no row is linked and the date of birth is the agent's. With no matching driver, the owner's date of birth is **never** another driver's.
+
+    A suffix at the end of a name box (`JR`, `SR`, `II`, `III`, `IV`) goes to `drivers[].suffix`, and a lone letter after the first name to `drivers[].middle`. Progressive refuses punctuation like `<first>, JR` in its name boxes.
+  </Accordion>
+  <Accordion title="Company name and business structure" icon="building-2">
+    A company box saying there's no company (`NO`, `N/A`, `None`, `Not applicable`…) means no company: the carriers treat the client as a sole proprietor named after the owner. Otherwise the structure comes from the name's last word: `LLC`, or `Inc`, `Corp`, `Company`, `Co` for a corporation. `LLC` only inside the name fills with a warning; any other name is the agent's.
+  </Accordion>
+  <Accordion title="Excluded drivers" icon="user-x">
+    A license-number box ending in `Exc`, `Excl`, `Exclude` or `Excluded` marks the driver excluded and takes the word off the number. Progressive answers its exclude question Yes for that driver; AmWINS gets "(Excluded)" after the license number; GEICO fills the driver with a warning. An exclusion written anywhere else isn't read.
+  </Accordion>
+  <Accordion title="Ownership from the notes" icon="key">
+    A blank ownership box takes the notes' answer only when it's unambiguous: exactly one ownership word (owned, leased, financed), not negated, and no trailer mentioned anywhere in the notes. Anything else leaves it empty with an `ownership.notes` check quoting the lines. A filled box always wins.
+  </Accordion>
+  <Accordion title="Mentions that become review items" icon="message-square-warning">
+    - A line naming NTL, non-trucking or bobtail adds a review item; `coverage.ntl` stays unset until the agent sets it. "No bobtail" isn't a request.
+    - A semi trailer (Dry Van, Reefer, Flatbed…) with no semi truck or pickup to pull it gets a check on the vehicle types.
+    - "No", "None", "N/A" or "no POP" as the current carrier, without an expiration date, is no prior insurance.
+  </Accordion>
+</AccordionGroup>
+
+## Edits and derived fields
+
+Editing `operations.radius` or `applicant.yearEstablished` in the panel recomputes what's derived from it (`rederive`): the miles, the years in business. Editing the derived field itself makes it the agent's value. From then on, for that intake, edits to its source no longer recompute it. The panel saves those fields with the intake as `agentEdited`, so they survive closing and reopening the panel. Warnings aren't recomputed after an edit.
+
+Source: [`docs/intake-and-rules.md`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/docs/intake-and-rules.md)

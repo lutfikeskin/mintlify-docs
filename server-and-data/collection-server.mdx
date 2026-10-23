@@ -1,0 +1,99 @@
+---
+title: "Collection server and hosting"
+sidebarTitle: "Collection server"
+description: "The dependency-free Node server that stores usage events, how it's deployed on Railway, and the rules that keep it closed and consistent with the extension."
+icon: "server"
+---
+
+## How updates and logs move
+
+<div className="pele-diagram">
+```text
+flowchart TB
+  subgraph OUT["Updates out"]
+    direction LR
+    DEV["Maintainer<br/>npm run package"] -- "upload" --> CWS["Chrome Web Store<br/>private listing"] -- "auto-update" --> EXT["Agents'<br/>Chrome"]
+  end
+  subgraph BACK["Logs back"]
+    direction LR
+    RW[("Railway usage-server<br/>one JSONL file per day")] -- "admin token" --> PULL["npm run pull<br/>server-data/"] --> USE["Daily and weekly<br/>reviews, warehouse"]
+  end
+  OUT -- "events every minute,<br/>HTTPS + upload token" --> BACK
+```
+</div>
+
+## The server
+
+[`server/index.mjs`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/server/index.mjs) is plain Node with no dependencies. It appends events to one JSONL file per day received.
+
+| Route | Who | Does |
+| --- | --- | --- |
+| `POST /v1/events` | Extension, upload token | Accepts known event types and fields, drops unknown ones (named in `dropped`), ignores duplicates, replies per event |
+| `GET /v1/health` | Anyone | `{ ok, server }`: the server's version, a hash of `index.mjs`. The event count needs the admin token |
+| `GET /v1/days`, `GET /v1/export` | Admin token | Lists days, exports events for `npm run pull` |
+| `GET /privacy` | Anyone | The privacy page |
+
+What it refuses or cleans:
+
+- Events from the local test page (`carrier: 'test'`, localhost).
+- Agency staff lists inside layouts, and layouts over the size limit.
+- Malformed run ids, rule hashes, settings or steps, per event, in the reply's `rejected`.
+- An `intake_profile` value out of its exact shape, or text that looks like it could identify the client (an `@`, a date, seven or more digits, a VIN-like word).
+
+### Run it locally
+
+```bash
+npm run server
+```
+
+It listens on `127.0.0.1:8787` and needs no token on loopback. Point the panel's **Server** setting at `http://localhost:8787`.
+
+## On Railway
+
+| | |
+| --- | --- |
+| Project | `tni-rater-autofill` |
+| Service | `usage-server`, built from `server/Dockerfile` |
+| URL | `https://usage-server-production.up.railway.app` (`/v1/health`) |
+| Storage | Volume `usage-data` at `/data`, one JSONL file per day: the **only full copy** of the log |
+| Variables | `RATER_TOKEN` (upload), `RATER_ADMIN_TOKEN` (read), `HOST=0.0.0.0`, `DATA_DIR=/data`, `PORT=8787` |
+
+Deploy a server change from the repository root:
+
+```bash
+railway up --service usage-server
+```
+
+<Warning>
+**The server fails closed.** Bound to anything but loopback without `RATER_TOKEN`, it refuses to start rather than run an open upload endpoint. On Railway that's a failed deployment, and the previous one keeps serving. Confirm `RATER_TOKEN` is set before deploying.
+</Warning>
+
+### Deploy order
+
+<div className="pele-diagram">
+```text
+flowchart LR
+  A["Server change that<br/>accepts new fields"] --> B["railway up"]
+  B --> C["node scripts/server-check.mjs<br/>says 'same'"]
+  C --> D["Release the extension<br/>that sends them"]
+```
+</div>
+
+An older server drops fields it doesn't know. Deploy the server first, check that `/v1/health` matches the checkout, then release the extension.
+
+## Tokens
+
+| Token | Can | Kept in |
+| --- | --- | --- |
+| Upload (`RATER_TOKEN`) | Only add events, which the server cleans | Railway, and built into the extension |
+| Admin (`RATER_ADMIN_TOKEN`) | Read the logs and the event count | Railway, the repository secret, and the maintainer's `~/.config/tni-rater/admin-token` |
+
+## Logs on your computer
+
+```bash
+npm run pull                          # all events -> server-data/events/
+npm run pull -- --since 2026-10-01
+npm run push-logs -- some/export.json # an agent's exported log
+```
+
+Source: [`docs/hosting.md`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/docs/hosting.md)

@@ -1,0 +1,74 @@
+/* The extension's side panel tokens (TNI Autofill sidepanel/sidepanel.css, shared with the TNI
+   COI app): white surfaces on a light grey canvas, brand blue for actions, quiet 1px borders,
+   small mono uppercase labels, purple for the assistant. Light only, like the app. */
+:root {
+  --tni-canvas: #f8f9fa;
+  --tni-surface: #ffffff;
+  --tni-surface-sunken: #f3f5f8;
+  --tni-ink: #24303a;
+  --tni-ink-strong: #17222b;
+  --tni-ink-secondary: #4a5963;
+  --tni-ink-muted: #6b7782;
+  --tni-border-soft: #e8ecef;
+  --tni-border: #dce2e7;
+  --tni-border-strong: #b5c0c9;
+  --tni-brand: #005aa9;
+  --tni-brand-dark: #004887;
+  --tni-brand-soft: #eef6fc;
+  --tni-success: #17775d;
+  --tni-warning: #a65a00;
+  --tni-signal: #b42318;
+  --tni-ai: #6d28d9;
+  --tni-font-sans: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  --tni-font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* The panel's fonts: the system UI font (Segoe UI Variable on Windows) and the system monospace. */
+body, h1, h2, h3, h4, h5, h6 { font-family: var(--tni-font-sans); }
+code, kbd, pre { font-family: var(--tni-font-mono); }
+
+/* A wider reading column than the theme's 36rem, so diagrams keep their direction beside the
+   table of contents. */
+@media (min-width: 1280px) {
+  #content-area { max-width: 46rem; }
+}
+@media (min-width: 1536px) {
+  #content-area { max-width: 52rem; }
+}
+
+/* Diagrams (pele.js) */
+.pele-diagram {
+  margin: 1.25rem 0 2rem;
+  padding: 20px 16px;
+  background: var(--tni-surface);
+  border: 1px solid var(--tni-border);
+  border-radius: 10px;
+  --pele-bg: var(--tni-surface);
+  --pele-fg: var(--tni-ink);
+  --pele-muted: var(--tni-ink-muted);
+  --pele-line: var(--tni-ink-secondary);
+  --pele-border: var(--tni-border-strong);
+  --pele-surface: var(--tni-brand-soft);
+  --pele-surface-alt: var(--tni-canvas);
+  --pele-accent: var(--tni-brand);
+  --pele-critical: var(--tni-signal);
+  --pele-font: var(--tni-font-sans);
+  --pele-font-mono: var(--tni-font-mono);
+  --pele-radius: 6px;
+  --pele-series-1: #005aa9;
+  --pele-series-2: #17775d;
+  --pele-series-3: #a65a00;
+  --pele-series-4: #6d28d9;
+  --pele-series-5: #b42318;
+  --pele-series-6: #2f6fd6;
+  --pele-series-7: #475569;
+  --pele-series-8: #e0a52a;
+}
+.pele-diagram > .code-block { margin: 0; }
+html.pele-loading .pele-diagram:not([data-pele]) > .code-block { visibility: hidden; }
+.pele-diagram[data-pele="drawn"] > .code-block { display: none; }
+.pele-canvas { position: relative; display: flex; justify-content: center; }
+/* Zoom buttons (shown when a diagram had to shrink to fit) appear on hover. */
+.pele-diagram .pele-zoom { opacity: 0; transition: opacity 0.15s; }
+.pele-diagram:hover .pele-zoom, .pele-diagram .pele-zoom:focus-within { opacity: 1; }
+.pele-canvas svg { max-width: 100%; height: auto; }

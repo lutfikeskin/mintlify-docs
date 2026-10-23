@@ -1,0 +1,117 @@
+---
+title: "Rules and the fill plan"
+description: "How a carrier rule finds a question, supplies an answer and declares where that answer came from, and how plan.js turns rules into fill steps."
+icon: "list-checks"
+---
+
+## From rules to plan
+
+`buildPlan(record, carrier, active)` in [`plan.js`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/src/plan.js) resolves every value **before** anything enters the page, so the fill engine only has to match and type.
+
+<div className="pele-diagram">
+```text
+flowchart TB
+  REC["Client record"] --> BP
+  ACT["Active unit"] --> BP
+  CR["Carrier rules"] --> BP
+  GR["Generic rules"] -. "unless turned off" .-> BP
+  BP{{"buildPlan()"}} --> FS["Field steps<br/>value, source, note"]
+  BP --> AS["Action steps<br/>helpers to click"]
+  FS --> KIT(["pagekit fill()"])
+  AS --> KIT
+```
+</div>
+
+Carrier rules come first and always win over the generic label rules. Exact matching comes before label fallback. A label fallback is skipped once a carrier rule fills the same intake path. There's no general most-specific-rule resolver, so the order of rules and their conditions matters.
+
+## Anatomy of a rule
+
+```js src/carriers/progressive.js
+{
+  q: '1ED',                                   // the question id it was written for: names the rule, never finds the field
+  field: 'USDOTInput.Question',               // data-model name: how the rule finds it
+  ask: 'Does the customer have a USDOT Number?', // exact wording: a check on the name
+  name: 'Has a USDOT number',                 // how the panel names it
+  kind: 'choice',
+  source: 'derived',                          // where the answer comes from
+  clientFact: true,                           // the agent's when the intake can't answer
+  value: hasUsdot,                            // (record, active) => answer
+  note: hasUsdotNote,                         // what to tell the agent when there's none
+}
+```
+
+| Responsibility | Keys |
+| --- | --- |
+| **Find the question** | `field` (data-model name), `ask` / `label` on the rule's `page`, `selector`, `withOption`; fenced with `pageOnly`, `notPages`, `steps`, `whenShown` / `unlessShown` |
+| **Supply the answer** | `path` (a record path) or `value(record, active)`, plus its `source` |
+| **Leave it to the agent** | `note`: an unresolved value becomes a review item |
+| **Leave the page's answer** | `ignore`, only for a known reason |
+| **Fill, but ask for confirmation** | `warn` |
+| **Repeated units** | `scope: 'vehicle'` / `'trailer'`, `repeat`, `witness: { selector, path }`, `whenShown.unit` |
+| **Respect what's on the page** | `replace`, `trustPage`, `verifyOnly`, `keepChoice`, `checkNumber`, `keepUnlisted`, `emptyNote` |
+| **Wait for another question** | `waitFor` (a data-model name) |
+
+The keys are typed as `CarrierRule` in [`types.js`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/types.js), so `npm run typecheck` catches a misspelled one in a carrier module.
+
+## Where an answer comes from
+
+Every rule with a `value` declares its `source`, and `test/provenance.test.mjs` enforces it. A rule with only a `path` is `intake`.
+
+| `source` | Meaning | What the fill does | Mark |
+| --- | --- | --- | --- |
+| `intake` | A record path, no computed value | Fills it | <span style={{color:'#16a34a',fontWeight:600}}>green</span> |
+| `derived` | Computed from intake facts, with the evidence in the rule | Fills it; may warn or note. Its step's `from` names the answers it read | <span style={{color:'#16a34a',fontWeight:600}}>green</span> |
+| `standard` | A TNI coverage or workflow standard | Fills it, tagged **TNI standard** | <span style={{color:'#2f6fd6',fontWeight:600}}>blue</span> |
+| `fact` | A client fact the intake doesn't give (loss runs, tenure with the current carrier…) | **Never filled.** `manualOnly`; the AI never sees it | <span style={{color:'#d97706',fontWeight:600}}>amber</span> |
+| `attestation` | Something the agent must assert (AmWINS' declaration, continuous coverage without current insurance) | **Never filled**, as `fact` | <span style={{color:'#d97706',fontWeight:600}}>amber</span> |
+
+A `source` can be a function of the record when the intake decides it. "No equipment" is `standard` when the intake gives no equipment value and `derived` when it gives one.
+
+A rule marked **`clientFact`** answers from the intake when it can. When it can't, its step is `manualOnly` too, so the AI never suggests or picks it.
+
+<Warning>
+A TNI standard is the only answer allowed without intake support, and only when it's recorded as TNI's. Any other answer the intake doesn't support is invented. Existing defaults in the code are implementation behavior, not proof they fit every client.
+</Warning>
+
+## Review mode
+
+Each carrier lists the business classes its rules were written for, `supportedClasses`. For any other class, or none:
+
+<div className="pele-diagram">
+```text
+flowchart LR
+  C{"Class<br/>supported?"} -- yes --> N["Standards<br/>fill as usual"]
+  C -- "no or missing" --> R["Review mode:<br/>each standard<br/>is a check item"]
+  R --> H(["Continue waits<br/>for the agent"])
+```
+</div>
+
+Intake and derived answers are unaffected. A carrier choice already on the page also needs confirmation in review mode, even when it differs from the standard.
+
+| Carrier | Supported classes |
+| --- | --- |
+| Progressive | Expediter, or a freight hauler class ("Freight Hauler", "General Freight Hauling") |
+| AmWINS | The class or what they haul names expediting or general freight |
+| GEICO | Progressive's: expediter or freight hauler |
+
+## Adding or correcting a rule
+
+<Steps>
+  <Step title="Identify the target">
+    The source, the target question, the carrier, product and state, and the entity it applies to. A similarly worded question isn't enough evidence.
+  </Step>
+  <Step title="Classify the answer">
+    An explicit fact, a supported transformation, an approved scoped default, known non-applicability, or an unresolved decision. Unknown isn't No.
+  </Step>
+  <Step title="Prefer shared facts">
+    Use a shared fact with a carrier-specific translation. Add a narrow condition for a real exception rather than copying a whole flow.
+  </Step>
+  <Step title="Keep ambiguity visible">
+    Conflicting or ambiguous notes stay for review. A tentative coverage mention needs confirmation and an entity before it becomes a selection.
+  </Step>
+  <Step title="Test both sides">
+    Test the intended case and a nearby case where the rule must not apply. Update the AI rulebook (`src/ai/tni-rules.js`) when a standard it states changes.
+  </Step>
+</Steps>
+
+Source: [`docs/intake-and-rules.md`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/docs/intake-and-rules.md)

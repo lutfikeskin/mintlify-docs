@@ -1,0 +1,104 @@
+---
+title: "Carriers"
+description: "How Progressive, AmWINS and GEICO differ: how questions are found, the steps of each quote, the helpers the fill clicks, and where each quote stops for the agent."
+icon: "building-2"
+---
+
+Each carrier is a module in [`src/carriers/`](https://github.com/lutfikeskin/tni-rater-autofill/tree/main/src/carriers), registered in [`carriers.js`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/src/carriers.js). Its config (`CarrierConfig` in `types.js`) holds its hosts, rules, helper actions, Continue pattern, steps and stop points.
+
+## Side by side
+
+| | Progressive | AmWINS | GEICO |
+| --- | --- | --- | --- |
+| Pages | Duck Creek, one address per page | One address, five steps | Single-page app, one address, nine steps |
+| Finds questions by | `fieldref` data-model name, else text | Selectors and labels | `Id_<Name>_<n>` name stem, by step and form |
+| JavaScript world | `MAIN` (ExtJS) | Isolated | Isolated, through shadow roots |
+| Generic label rules | Off | On, kept out of row sections | Off |
+| Answers per round | One (server checks each) | Whole round (`batch: true`) | One |
+| Page or step read from | The URL's `pageName` | Visible headings | Progress bar, confirmed by the page title |
+| Continue | Continue / "Ok, start quote." | Save & Continue | Next, Save and Continue, Looks Good |
+| Live status | Mapped from live MD, OH, NC quotes; many live runs | Live runs since October 2026 | Mapped from saved pages and captures; first live runs 2026-10-21 |
+
+## Progressive
+
+<div className="pele-diagram">
+```text
+flowchart TB
+  subgraph APP["The application"]
+    direction LR
+    B["Business"] --> V["Vehicles<br/>and trailers"] --> D["Drivers"] --> M["More about<br/>business"] --> F["Filings"]
+  end
+  subgraph RATE["Rating and the quote"]
+    direction LR
+    R["Rates<br/>CoveragesRates"] --> P["Print<br/>agent clicks Print/Send"]
+  end
+  APP --> RATE
+  B -. "existing policy" .-> X["DeclinationNotice<br/>stop page"]
+  B -. "owner not verified" .-> N["NoHit<br/>agent's page"]
+```
+</div>
+
+- **Helpers, each clicked once and in order:** Verify DOT, Add a Vehicle, the vehicle tile, Lookup VIN, Add Trailer, the trailer tile, Add Driver, cargo **+** → Add a Commodity → Done with this coverage, general liability **+** → Done (when the intake asks for GL), the bill plan, Recalculate, then Print.
+- **Never continued:** NoHit (the agent adjusts the owner's name), the Print page (Chrome opens the quote PDF only after the agent's own Print/Send click), and the finish and buy pages.
+- **Stop page:** DeclinationNotice, when the client already has a Progressive commercial auto policy. Nothing is filled or clicked.
+- **One answer at a time**, because Progressive checks every answer with its server; new follow-up questions are picked up as they appear.
+- **Renumbering:** Progressive renumbered every question id on 2026-10-07. Rules hold the id they were written for only as a name.
+
+## AmWINS
+
+<div className="pele-diagram">
+```text
+flowchart TB
+  subgraph APP["Five steps on one address, each ending in Save & Continue"]
+    direction LR
+    I["Insured Info"] --> D["Drivers"] --> V["Vehicles<br/>VIN import"] --> C["Coverages"] --> U["Underwriting<br/>trailers as text"]
+  end
+  APP --> DEC(["Declaration:<br/>the agent's attestation"])
+```
+</div>
+
+- **Helpers:** the Auto tile and Open New Application to start, Add Driver for each extra driver, **Import Data** and **Import Valid Records** for the VIN list (verified by the rows changing), and **Default all answers to No** on Underwriting (skipped while an agent's answer is on the step).
+- **Vehicle rows** are found by their VIN (`witness`), since Import Valid Records draws them in its own order.
+- **No trailer section:** each intake trailer becomes a line of the Underwriting disclosure text, such as `Trailer - 2015 Great Dane Dry Van - VIN … - $25K`.
+- **Never submitted:** the declaration is the agent's, so Save & Continue never gets past it.
+
+## GEICO
+
+<div className="pele-diagram">
+```text
+flowchart TB
+  GW["Agents' gateway<br/>Start New Quote ZIP, USDOT, product"]
+  subgraph APP["The application: one address, step read from the progress bar"]
+    direction LR
+    S1["Business Class<br/>& USDOT"] --> S2["Business &<br/>Owner Info"] --> S3["Vehicles<br/>one form per unit"] --> S4["Drivers &<br/>Incidents"]
+  end
+  subgraph QUOTE["The quote"]
+    direction LR
+    S5["Additional<br/>Business Info"] --> S6["Quote & Coverages<br/>Recalculate, pay plan,<br/>Print Quote Proposal"]
+  end
+  subgraph STOP["The agent's steps: nothing filled or clicked"]
+    direction LR
+    S7["Final Quote<br/>Details"] --> S8["MVR & CLUE<br/>paid reports"] --> S9["Payment<br/>Information"]
+  end
+  GW --> APP --> QUOTE --> STOP
+  classDef stop stroke-dasharray: 5 4
+  class S7,S8,S9 stop
+```
+</div>
+
+- **One address for every step.** The step is read from GEICO's progress bar, and only while the page title names the same step. When they disagree mid-redraw, the fill reads nothing and asks to fill again.
+- **Units one form at a time.** Vehicles and Drivers & Incidents show one unit's form at a time. Rules name the form by a question only it asks (`whenShown`), and a form filled for another unit is held until the agent picks its unit.
+- **Adding units:** with **Fill each page as soon as it opens** or **Click Continue when the page is done** on, the fill adds each intake vehicle, trailer and driver not on the quote yet (the list's **+**, Vehicle or Trailer on the chooser, Next), once per unit.
+- **Quote & Coverages:** opens the cargo card when the intake asks for cargo, then once nothing is left and the page has been quiet for 2 seconds, clicks **Recalculate** once, waits for the premium, rereads every answer, picks the pay plan and clicks **Print Quote Proposal**. Answers GEICO changed back are put back (the fill's) or left (the agent's) and marked red.
+- **Stop steps** (dashed): Final Quote Details, MVR & CLUE and Payment Information are the agent's. MVR and CLUE reports cost the agency, so TNI stops a GEICO quote at Quote & Coverages and prints the proposal there.
+- **Never filled:** the owner's Social Security number.
+
+<Note>
+GEICO's support is mapped from saved Nebraska pages and Florida captures, with its first live runs on 2026-10-21. The mock (`npm run mock:geico`) checks behavior against GEICO-like pages, not GEICO's own scripts.
+</Note>
+
+## The local test carrier
+
+`carriers.js` also registers a `test` carrier for `localhost`, and maps the practice copies served from the repository (`test/replay/`, `test/fixtures/amwins/`, `test/fixtures/geico/`) to the real carriers' rules. Practice pages fill like the real ones but aren't recorded as quotes.
+
+Source: [`README.md`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/README.md#status), [`docs/new-carrier.md`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/docs/new-carrier.md)

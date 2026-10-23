@@ -1,0 +1,85 @@
+---
+title: "The side panel and the marks"
+sidebarTitle: "Side panel and marks"
+description: "What the agent sees: the three steps, the answer tags, the colored marks on the carrier page, and the settings that change how filling behaves."
+icon: "panel-right"
+---
+
+The panel is the agent's whole interface. It sits in Chrome's side panel, or in a window of its own (**Open in its own window**), and always works on the quote tab in front.
+
+## The agent's path
+
+<div className="pele-diagram">
+```text
+flowchart LR
+  DROP[/"Drop the<br/>intake PDF"/] --> S1["1 · Check intake<br/>fix or confirm"] --> S2["2 · Fill page<br/>per page or step"] --> S3["3 · Confirm<br/>what's left"] --> NEXT(["Continue"])
+  NEXT -. "next page" .-> S2
+```
+</div>
+
+From top to bottom, the panel shows where the agent is (the carrier, the page or step, "Step 3 of 7" and a progress bar), the client, the three steps, and a bar at the bottom that always names the one next thing to do: **Fill this page**, **Stop**, **Show the next one**, **Approve**, **Looks right, continue**, or **Continue**.
+
+<Steps>
+  <Step title="Check intake">
+    Lists what the form got wrong or left ambiguous: an address with no commas, a VIN that fails its check digit, answers typed into the claims box, a radius given as a range or in kilometres, a missing or unclear ownership answer. The agent fixes the value in its card or clicks **Looks right now**. **See intake** opens the PDF over the panel with that answer outlined. **All client details** opens every answer in a drawer to read or correct; the agent's edits are what gets filled.
+  </Step>
+  <Step title="Fill page">
+    **Fill this page** builds the plan and fills. With several drivers or vehicles, the agent picks which one the page is about first. While it fills, the bar counts answers and the list shows each as the page takes it. **Answers on this page** then lists every answer and every question left, in page order, filterable by **All**, **Need you** and **Filled**.
+  </Step>
+  <Step title="Confirm">
+    What's left for the agent on the page. A choice the page offers can be answered from the panel; report orders, exclusions, signatures, payment questions and typed answers are answered on the page. **Show on page** scrolls to a question and flashes its mark. **Mark done** settles an item without filling it.
+  </Step>
+</Steps>
+
+## Where each answer came from
+
+Every answer in the list carries a tag, except an intake answer, which has none.
+
+| Tag | Meaning |
+| --- | --- |
+| *(none)* | Straight from the intake |
+| **Worked out** | Computed from intake answers, such as the owner's full name or a phone number without punctuation |
+| **Your edit** | Set or corrected by the agent in the panel |
+| **TNI standard** | TNI's fixed answer for a question the intake doesn't answer |
+| **On the page** | Left as the carrier already had it |
+| **Clicked** | A helper button the fill pressed |
+| **You** | The agent answered it on the page |
+
+Clicking an answer shows its source. **See in intake** outlines it on the PDF (for a worked-out answer, the answers it came from). **Change answer** offers the page's choices for a list, radio or checkbox; the pick is then the agent's, and no later fill changes it.
+
+## Marks on the carrier page
+
+The fill engine outlines each field it handled. The **i** next to the list's title shows the same key.
+
+| Mark | Color | Means |
+| --- | --- | --- |
+| <span style={{display:'inline-block',width:'28px',height:'14px',borderRadius:'3px',background:'#16a34a'}} /> solid | green `#16a34a` | Filled from the intake, or worked out from it |
+| <span style={{display:'inline-block',width:'28px',height:'14px',borderRadius:'3px',background:'#2f6fd6'}} /> solid | blue `#2f6fd6` | A TNI standard: an assumption, not a fact from the intake |
+| <span style={{display:'inline-block',width:'28px',height:'14px',borderRadius:'3px',border:'2px dashed #d97706'}} /> dashed | amber `#d97706` | Needs the agent: not on the intake, required by the rater, or a standard to confirm in review mode |
+| <span style={{display:'inline-block',width:'28px',height:'14px',borderRadius:'3px',border:'2px dashed #dc2626'}} /> dashed | red `#dc2626` | Couldn't fill, such as no dropdown option matching. The panel lists the options it saw |
+| <span style={{display:'inline-block',width:'28px',height:'14px',borderRadius:'3px',background:'#7c3aed'}} /> solid | purple `#7c3aed` | An AI answer |
+| <span style={{display:'inline-block',width:'28px',height:'14px',borderRadius:'3px',background:'#475569'}} /> solid | slate `#475569` | The agent's pick, put in from the panel's choices |
+
+<Info>
+The colors are `COLORS` in `pagekit.js` and `--mark-*` in `sidepanel.css`. A pagekit test keeps the two equal.
+</Info>
+
+## Settings that change filling
+
+| Setting | Where | Effect |
+| --- | --- | --- |
+| **Fill new questions as they appear** | Settings → Filling | On by default. Fills follow-up questions that an answer opens |
+| **Click Continue when the page is done** | Settings → Filling | On by default. Continues once nothing is left for the agent, where the carrier allows it. Never Bind or Submit |
+| **Fill each page as soon as it opens** | Settings → Filling | Off by default (`auto-pages`, called "Fill the pages" in code comments). No need to press Fill this page |
+| **Let me look before Continue** | Settings → Filling | Off by default. Continue waits for **Looks right, continue**; any later change to the page holds it again |
+| **Suggest answers** | Settings → Assistant | Luna suggestions for unresolved choice questions |
+| **Put checked picks in for me** | Settings → Assistant | Luna may pick verified choices itself; each pick still holds Continue until approved |
+| **Server** | Settings → Advanced | Where usage events go. Blank turns uploads off |
+| **This intake is a test run** | Settings → Advanced | Keeps a practice quote out of the review's numbers |
+| **Scenario**, **Capture page layout** | Settings → Advanced | Page captures for mapping a carrier (also **Alt+Shift+C**) |
+
+## Reports per tab and page
+
+Each quote tab and page keeps its own report. Switching tabs, closing the panel or popping it out into a window shows the earlier reports again, with the time of each fill, until Chrome closes. Once more than one page is filled, **This page ▾** lists the earlier pages to read their answers as they were filled.
+
+Source: the repository's [`README.md`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/README.md#using-it)

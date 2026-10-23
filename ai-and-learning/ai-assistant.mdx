@@ -1,0 +1,113 @@
+---
+title: "AI assistant (Luna)"
+sidebarTitle: "AI assistant"
+description: "What the AI is allowed to do, the two-call evidence check, the approval hold before Continue, and what it never touches."
+icon: "sparkles"
+---
+
+The rules fill first. The AI only handles the small remainder: **unresolved radio, select and checkbox questions** where no exact carrier mapping applies. It doesn't audit filled answers, type text, click, navigate, look anything up or submit.
+
+It uses OpenAI **GPT-6 Luna** (`gpt-6-luna`, fixed) through the Responses API, with the agent's own key. Assistance and automatic picks are both off until the agent turns them on.
+
+## The pipeline
+
+<div className="pele-diagram">
+```text
+flowchart TB
+  subgraph ASK["Ask Luna"]
+    direction LR
+    Q["Open choice<br/>questions"] --> C1["Call 1: option<br/>or leave"] --> C2{"Call 2:<br/>evidence<br/>holds?"}
+    C2 -- no --> LEAVE["Agent's"]
+  end
+  subgraph PUT["Put it in"]
+    direction LR
+    SUG["Suggestion or<br/>auto pick"] --> SNAP{"Page<br/>unchanged?"} --> APPLY["Apply,<br/>check it"] --> HOLD(["Hold until<br/>approved"])
+    SNAP -- no --> FRESH["Fill again"]
+  end
+  ASK -- "supported" --> PUT
+```
+</div>
+
+Before anything is sent, questions on the never-list, `manualOnly` facts and questions the agent already settled are dropped. An applied answer is marked purple, and the page must keep it.
+
+## The two calls
+
+<div className="pele-diagram">
+```text
+sequenceDiagram
+  participant Panel as Side panel
+  participant Luna as OpenAI gpt-6-luna
+  Panel->>Panel: plan groups (≤12 fields, ≤48,000 chars,<br/>≤1,000 enum values), size the verify call
+  Panel->>Luna: choice call: questions, options,<br/>TNI rules, scoped intake (once)
+  Luna-->>Panel: per field: option id or leave,<br/>source ids, short reason
+  Panel->>Panel: validate: options exist, sources exist,<br/>model is gpt-6-luna
+  Panel->>Luna: verification call: scoped intake +<br/>cited evidence + proposed options
+  Luna-->>Panel: supported or not, per field
+  Panel->>Panel: keep only supported, non-leave picks
+```
+</div>
+
+| Setting | Value |
+| --- | --- |
+| Policy | `luna-evidence-v4` (`POLICY_VERSION` in `src/ai/luna.js`) |
+| Reasoning, verbosity | Low, low |
+| Output | Strict Structured Outputs, `store: false`, no tools, no `temperature` or `top_p` |
+| Fields per request | Up to 12, split adaptively |
+| Output caps | 4,096 tokens for choices, 2,048 for verification |
+| Cache | A local answer cache keyed on the question as shown, the intake, the active unit, model and policy |
+
+<Note>
+The second call is another judgment from the same model, not independent proof. Neither call produces a calibrated confidence, and the panel shows none. These caps bound request work; they don't measure billed tokens, latency or accuracy.
+</Note>
+
+## Approval and holds
+
+<div className="pele-diagram">
+```text
+stateDiagram-v2
+  [*] --> Suggested: verified suggestion
+  Suggested --> Dismissed: No thanks
+  Suggested --> Applied: Use this answer
+  [*] --> Picked: automatic pick (lunaAuto)
+  Picked --> Approved: Approve
+  Picked --> Held: Reject
+  Held --> Released: agent changes the field<br/>or confirms the page's answer
+  Applied --> [*]
+  Approved --> [*]
+  Released --> [*]
+  Dismissed --> [*]
+```
+</div>
+
+- Automatic picks are **purple** and hold Continue until the agent approves them, in their rows or with **Approve** in the bar.
+- A hold is written **before** the answer is dispatched, so a crash or intake change afterwards can't erase it. Holds survive a panel reload and follow the physical quote.
+- An agent edit while answers go in keeps the agent's value, protects its key, and stops the answers still to come, across all frames.
+
+## Never sent, never picked
+
+The never-list filters questions about MVR or CLUE, exclusions, signatures, attestations and authorizations, bank, card, SSN or password details, and typed identifiers. A question the rules leave as a client fact or attestation is `manualOnly` and never reaches Luna. On stop steps and stop screens, Luna isn't asked and nothing is applied.
+
+## Reading the intake's notes
+
+Once per intake, with the assistant on, Luna also reads the claims box and Additional Notes, split into at most 20 redacted lines. For each line it answers, as bounded fields:
+
+- Does it name non-trucking liability (NTL, bobtail)?
+- Does it ask for coverage beyond the form's ticked coverages?
+- Does it say the client has, wants or asks about general liability?
+- How many years has the business operated, or when did it start?
+
+Flagged lines become **Check intake** items quoting the line, with buttons from code (**Client has GL** / **Not GL**). Nothing is filled from them.
+
+A separate request sends **only drivers' first names** and asks whether each is more often given to women. A `likely_female` answer adds a check item offering **Use Female** or **Keep Male**; the TNI standard otherwise stays Male.
+
+## Changing the AI
+
+- Keep [`tni-rules.js`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/src/ai/tni-rules.js) aligned with implemented standards. It has sections for Progressive and AmWINS only; GEICO gets the scoped intake alone.
+- Test invalid options, missing or misleading sources, restricted questions, stale responses, manual edits, model identity, and approval before Continue.
+- `npm run mock:luna` drives the packaged extension against controlled responses. `npm run ai:eval -- --score <file>` scores saved output; `--live` needs `OPENAI_API_KEY` and an explicit decision to run it.
+
+<Warning>
+Controlled mocks verify integration behavior, not live accuracy or calibrated thresholds. Committed evaluation cases are synthetic and not expert-reviewed.
+</Warning>
+
+Source: [`docs/ai-assistant.md`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/docs/ai-assistant.md)

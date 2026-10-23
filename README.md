@@ -1,55 +1,31 @@
-# Mintlify Starter Kit
+# TNI Rater Autofill docs
 
-Use the starter kit to get your docs deployed and ready to customize.
+Developer documentation for TNI Rater Autofill, built with [Mintlify](https://mintlify.com). It explains how the extension is structured and how its parts work, with diagrams drawn by [Pele](https://pele.run). The source repository's `docs/` folder stays the source of truth for rule-by-rule detail.
 
-Click the green **Use this template** button at the top of this repo to copy the Mintlify starter kit. The starter kit contains examples with
+## Layout
 
-- Guide pages
-- Navigation
-- Customizations
-- API reference pages
-- Use of popular components
+| Path | Holds |
+| --- | --- |
+| `docs.json` | Site settings, theme and navigation |
+| `index.mdx`, `get-started/` | Overview, setup, repository map |
+| `how-it-works/` | Architecture, the fill lifecycle, the side panel, data and privacy |
+| `carriers-and-rules/` | Intake, rules, browser filling, carriers, TNI standards, adding a carrier |
+| `ai-and-learning/` | The AI assistant, usage events, the learning loop, corrections |
+| `server-and-data/` | The collection server, daily review, quoting history database |
+| `dev-workflow/` | Testing, type checking, releasing |
+| `pele.js`, `style.css` | Diagram rendering and the extension's colors, loaded on every page |
+| `logo/`, `favicon.png` | Built from the extension's logo |
 
-**[Follow the full quickstart guide](https://starter.mintlify.com/quickstart)**
+`AGENTS.md` has the writing rules, terminology and the diagram convention.
 
-## AI-assisted writing
-
-Set up your AI coding tool to work with Mintlify:
+## Preview locally
 
 ```bash
-npx skills add https://mintlify.com/docs
+npx mint dev
 ```
 
-This command installs Mintlify's documentation skill for your configured AI tools like Claude Code, Cursor, Windsurf, and others. The skill includes component reference, writing standards, and workflow guidance.
+The preview is at `http://localhost:3000` (`--port` changes it). Check links with `npx mint broken-links`.
 
-See the [AI tools guides](/ai-tools) for tool-specific setup.
+## Publishing
 
-## Development
-
-Install the [Mintlify CLI](https://www.npmjs.com/package/mint) to preview your documentation changes locally. To install, use the following command:
-
-```
-npm i -g mint
-```
-
-Run the following command at the root of your documentation, where your `docs.json` is located:
-
-```
-mint dev
-```
-
-View your local preview at `http://localhost:3000`.
-
-## Publishing changes
-
-Install our GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app) to propagate changes from your repo to your deployment. Changes are deployed to production automatically after pushing to the default branch.
-
-## Need help?
-
-### Troubleshooting
-
-- If your dev environment isn't running: Run `mint update` to ensure you have the most recent version of the CLI.
-- If a page loads as a 404: Make sure you are running in a folder with a valid `docs.json`.
-
-### Resources
-- [Mintlify documentation](https://mintlify.com/docs)
+Mintlify deploys the default branch automatically after a push. Edits made in the Mintlify dashboard editor are drafts until published there.

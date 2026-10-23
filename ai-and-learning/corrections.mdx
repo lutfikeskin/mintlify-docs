@@ -1,0 +1,67 @@
+---
+title: "Fixing a reported problem"
+description: "From an agent's report to a tested fix in the right layer, without inventing the answer that was missing."
+icon: "wrench"
+---
+
+## Find the cause
+
+Start with the report and the scenario. Pull central logs only when the task needs them (`npm run pull`, then `npm run review`). Locate the session, carrier, page, extension version, active unit, and the answers before it.
+
+The events that help most:
+
+| Event | Tells you |
+| --- | --- |
+| `problem_report` | What the agent saw, in their words |
+| `fill_run` | What held Continue, and whether it advanced |
+| `fill_field` | Each question's result, reason and timing |
+| `field_change` | Whether the agent or the page changed an answer |
+| `page_layout` | The page's structure; with reason `recalculate`, what GEICO showed after the fill's Recalculate |
+| `ai_suggest`, `ai_decision` | What the AI proposed and what the agent did |
+
+A layout has structure, not the client's typed answers. It doesn't prove a client fact or the cause of a server rejection.
+
+## Fix the right layer
+
+<div className="pele-diagram">
+```text
+flowchart TD
+  P([Report]) --> Q1{"Intake read<br/>wrong?"}
+  Q1 -- yes --> L1["normalize.js<br/>schema.js"]
+  Q1 -- no --> Q2{"Wrong question<br/>or unit?"}
+  Q2 -- yes --> L2["Carrier mapping,<br/>row assignment"]
+  Q2 -- no --> Q3{"State or unit<br/>exception?"}
+  Q3 -- yes --> L3["Scoped rule<br/>+ its facts"]
+  Q3 -- no --> Q4{"Page or helper<br/>misbehaved?"}
+  Q4 -- yes --> L4["pagekit.js<br/>sidepanel.js"]
+  Q4 -- no --> Q5{"AI unsupported<br/>or stale?"}
+  Q5 -- yes --> L5["AI checks,<br/>cache, approval"]
+  Q5 -- no --> L6["Missing fact or decision:<br/>keep it the agent's,<br/>get evidence"]
+```
+</div>
+
+## Implement and verify
+
+<Steps>
+  <Step title="Restate it">
+    Expected versus actual behavior for this scenario. Separate a one-client correction from a reusable rule.
+  </Step>
+  <Step title="Reproduce it small">
+    The smallest scrubbed fixture or synthetic record that shows it. Raw pages and client PDFs stay in ignored `layouts/`.
+  </Step>
+  <Step title="Fix the responsible layer">
+    Preserve manual edits, review stops, entity scope and retained-value checks. Update the AI rulebook only if a standard it states changed.
+  </Step>
+  <Step title="Test both sides">
+    The failure, and a nearby case where the change must not apply. Pick the harness from [Testing](/dev-workflow/testing); don't refresh a baseline blindly to make a failure pass.
+  </Step>
+  <Step title="Report honestly">
+    What's fixed, what was exercised, and what remains live-only uncertainty. Package, publish, deploy or merge only when that's part of the request.
+  </Step>
+</Steps>
+
+<Warning>
+If a general fix depends on an unknown insurance answer, finish the diagnosis and ask for the missing fact or decision. Repeated selections, old walkthrough defaults and AI confidence aren't authorization to invent it.
+</Warning>
+
+Source: [`docs/corrections.md`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/docs/corrections.md)

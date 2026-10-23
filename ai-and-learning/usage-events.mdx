@@ -1,0 +1,80 @@
+---
+title: "Usage events"
+description: "What the extension records about each quote, how events reach the server without loss or duplicates, and what's never recorded."
+icon: "activity"
+---
+
+While an intake is loaded, the extension records how it's used on Progressive, AmWINS and GEICO quote pages. A **Recording usage** label shows in the panel header.
+
+<Warning>
+Agents are told in writing before rollout: several states require notice of electronic monitoring of employees.
+</Warning>
+
+## The events
+
+| Event | Contents |
+| --- | --- |
+| `intake_loaded` | Intake fingerprint (SHA-256 of the PDF), form version, state, business class, vehicle types, unit counts, requested coverages, warning codes, platform, `channel` and `commit` |
+| `intake_profile` | The client's business without names, numbers or addresses: state, class, operations, each unit's type, year, make, model and value, drivers' ages (not dates of birth), coverages and limits, prior insurer and expiry month |
+| `warning_checked`, `intake_edit` | Which warning the agent checked; which field they corrected (added, changed, cleared), never the value |
+| `fill_run`, `fill_field`, `fill_error` | Per fill: carrier, page, step, what was filled, kept or failed and why; chosen options, never typed text; the run id, rule fingerprint and switches in force |
+| `field_change` | A change on the page by the agent or the page: from/to for choices; for text, only whether it matches what was typed and which intake field it equals |
+| `page_view`, `page_layout` | Page switches; each page's structure |
+| `check_dismissed` | A **Mark done** on a needs-you item, and why it needed the agent |
+| `ai_suggest`, `ai_decision` | Model, timing, counts, provider usage, errors; the redacted label, decision and chosen option |
+| `quote_premium` | The premium a carrier page quotes when it changes |
+| `problem_report` | The agent's note from **Report a problem on this page**, with intake values replaced |
+| `usage_lost` | How many of the oldest events a full queue dropped |
+
+The shapes are typed in [`types.js`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/types.js) and built in [`src/usage.js`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/src/usage.js).
+
+## Identity on every event
+
+| Field | Why |
+| --- | --- |
+| `install` | A random id for this copy on this computer, so two agents sharing initials stay apart |
+| `seq` | Orders one install's events; a gap shows events lost on the way |
+| quote session | Groups a quote's events |
+| `run` | A UUID per fill, shared by its `fill_run`, `fill_field` and `fill_error` |
+| `rules` | The rule files' fingerprint, so a review can tell which rules filled |
+| `channel`, `commit` | `store`, `unpacked` or `source`, and the commit it was packaged from (`+dirty` with uncommitted changes) |
+
+## Getting to the server
+
+<div className="pele-diagram">
+```text
+sequenceDiagram
+  participant Panel as Side panel
+  participant Q as Local queue<br/>(chrome.storage.local)
+  participant S as Collection server
+  Panel->>Q: append event (one panel writes at a time)
+  loop every minute
+    Q->>S: POST /v1/events (sized to the body limit)
+    alt accepted
+      S-->>Q: per event: stored, duplicate, or refused
+      Q->>Q: remove stored and duplicates,<br/>keep refused aside for export
+    else 413 too large
+      Q->>Q: send smaller batches
+    else offline or error
+      Q->>Q: keep, retry later
+    end
+  end
+```
+</div>
+
+- Events leave the queue only when the server's reply accounts for each one. Retries are deduplicated by id.
+- The queue is capped (`MAX_EVENTS`). When full, the oldest go and a `usage_lost` event records how many.
+- The extension asks for `unlimitedStorage` so a long outage doesn't hit Chrome's quota first. A save that still fails shows in the panel.
+- **Export log** is the fallback when uploads can't get through.
+
+<Info>
+A new event field has to be accepted by the server's allowlist **and** deployed before the extension that sends it. Otherwise the server stores the event with that field named in `dropped`.
+</Info>
+
+## Never recorded
+
+Client names, numbers and addresses, anything typed into text boxes, screenshots, keystrokes and other websites. Client names are also redacted from labels and options. The two exceptions are the business profile and what an agent types into a problem report.
+
+The profile is pseudonymous, not anonymous: state, fleet, makes and years together can still point to one carrier, for example beside public FMCSA records.
+
+Source: [`README.md`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/README.md#usage-log-pilot), [`docs/learning.md`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/docs/learning.md)

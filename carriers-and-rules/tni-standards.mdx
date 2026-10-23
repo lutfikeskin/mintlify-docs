@@ -1,0 +1,97 @@
+---
+title: "TNI standards"
+description: "The fixed answers TNI has set for questions the intake doesn't answer, per carrier, and the client facts that are never defaulted."
+icon: "stamp"
+---
+
+A **TNI standard** is TNI's own fixed answer for a question the intake doesn't answer. It's the one kind of answer the extension may give without intake support, and only when it's recorded as TNI's. Standards are filled, marked **blue** on the page, tagged **TNI standard** in the panel, and become check items in [review mode](/carriers-and-rules/rules#review-mode).
+
+<Note>
+An intake answer always wins over a standard. Most standards also step aside, leaving the question to the agent with the line quoted, when the intake's notes point the other way.
+</Note>
+
+## Never defaulted
+
+These are client facts or attestations. When the intake doesn't answer them, they're the agent's, and the AI never sees them:
+
+- Loss runs and tenure with the current carrier, except where a standard below says otherwise
+- Continuous coverage when the intake doesn't show current insurance
+- Other business coverages when the notes say the client has general liability
+- A USDOT record whose registered name differs from the intake's business
+- The NJ vehicle registrant, a missing ownership answer, marital status
+- The owner's date of birth when no driver matches the owner
+- On GEICO: anything the intake doesn't answer and no GEICO standard covers
+
+## By carrier
+
+<Tabs>
+  <Tab title="Progressive">
+    | Question | Standard |
+    | --- | --- |
+    | Comprehensive and collision | Yes, $1,000 deductibles |
+    | Loan / lease | From the intake's vehicle ownership |
+    | Equipment | From the attached-equipment value; none given is "no equipment" ($0–$2,000 band) |
+    | Special cargo | No |
+    | Cargo commodity for "General freight" | Consumer Goods / Other Consumer Goods |
+    | Filings | Yes + Federal when the intake asks; blank is No without a USDOT or MC number |
+    | Rental | $40 a day |
+    | UM / UIM | $100k CSL |
+    | Payment | Automatic payments; print the insurance quote |
+    | Continuous coverage | Yes when the intake shows current insurance |
+    | Other business coverages | None of the above, unless the notes say the client has GL |
+    | General liability (when requested) | Added after cargo; for-hire trucking income Yes, premises, set-up, other business and oil-and-gas No; limit from the intake, else $1M/$2M flagged to confirm |
+    | USDOT belongs to the business | Yes, unless the lookup's registered name differs from the intake's |
+    | USDOT obtained within 60 days | Yes, when the lookup can't find the number |
+    | Hazmat placard | Blank is No, unless what they haul may need one |
+    | Accidents, claims, violations | The claims box; neither answer is No unless the notes mention one or an SR-22 is needed |
+    | Had the vehicle less than one year | No, except a vehicle of this model year or later |
+    | Personal injury protection | Florida: TNI's standard; Arkansas: 5k Medical and Hospital alone |
+    | Trailers | Comp/collision Yes at $1,000, no rental or fire/theft, no equipment unless given |
+  </Tab>
+  <Tab title="AmWINS">
+    | Question | Standard |
+    | --- | --- |
+    | Driver gender | MALE, unless set in All client details or from an accepted AI suggestion |
+    | Year first licensed | Birth year + 17 (the agent's without a readable date of birth) |
+    | How long with the current carrier | 1 TO 2 YEARS, asked only of clients with a DOT number |
+    | Claim-free loss runs, valued loss runs | No |
+    | Additional interest | No for every intake; a lienholder or lessor is added after the quote |
+    | Vehicles not owned, leased to others, MVR verification, owned unscheduled vehicles, convictions | No |
+    | Years in business, when blank | 0 years: "New Venture", established this year (Check intake warns) |
+    | Permanently attached equipment | No when the intake gives no equipment value |
+  </Tab>
+  <Tab title="GEICO">
+    Set by TNI after the first live runs, 2026-10-21.
+
+    | Question | Standard |
+    | --- | --- |
+    | Business description | Expediter or general freight hauler: For Hire Trucking → Other For-Hire Trucking |
+    | Vehicle type | Cargo van → Delivery Van; Semi Truck → Tractor |
+    | Customizations | None without an equipment value; the value 0 |
+    | Comprehensive and collision | Yes on every vehicle and trailer, $1,000 deductibles, unless the notes decline them |
+    | Drivers besides the owner | Employee; the employee count from those drivers |
+    | Years with the current insurer | 1-3 Years with a current auto policy |
+    | Other liability insurance | None, unless the intake shows a GL policy |
+    | Additional insured, waiver of subrogation | No |
+    | Florida | Medical Payments Not Included; PIP lists left as GEICO has them |
+    | Refrigeration breakdown | Yes with a reefer, else No |
+    | SR-22, hazmat placard, team driving, proof of filings | No unless the intake says otherwise |
+    | Household goods / ginned cotton | Yes for a Household Goods Mover, else No |
+    | Rental with downtime | Not Included |
+    | Uninsured motorist | $100,000 CSL; Texas $100,000/$300,000 |
+    | Road service | Accepted on every vehicle |
+    | Fire and theft; rental | Not Included; $40 a day, $1,200 max |
+    | Cargo | Mobile homes, documents, live animals No; commodities from the class and what they haul |
+    | Pay plan | 11 Payments, else the plan with the most payments, named in the report |
+    | Gateway product | Commercial Auto/Trucking |
+    | Gross vehicle weight | Left as GEICO fills it |
+  </Tab>
+</Tabs>
+
+## How a standard gets added
+
+Standards come from TNI, usually after a live run where the agent answered the same question by hand. Each one is recorded with its date in [`docs/intake-and-rules.md`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/docs/intake-and-rules.md), implemented as a rule with `source: 'standard'`, and, for Progressive and AmWINS, stated in the AI rulebook ([`src/ai/tni-rules.js`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/src/ai/tni-rules.js)) so Luna can cite it.
+
+Repeated agent answers and AI acceptance aren't enough to make a standard. Logs can suggest one; only TNI decides.
+
+Source: [`docs/intake-and-rules.md`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/docs/intake-and-rules.md)

@@ -1,0 +1,108 @@
+---
+title: "Browser filling"
+description: "How the fill engine finds a question on a live carrier page, keeps track of it across redraws, works each kind of control, and notices when the carrier changed the page."
+icon: "mouse-pointer-click"
+---
+
+The fill engine, [`pagekit.js`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/src/content/pagekit.js), works the **live DOM** and the widget APIs the page supports. It never uses downloaded HTML as a runtime template.
+
+## How a rule finds its question
+
+A rule finds its question by **what it is**, never by a remembered question id. Progressive renumbered every question on 2026-10-07, and ids kept from before put answers into the wrong questions (Business Name got the trucker type).
+
+<div className="pele-diagram">
+```text
+flowchart TD
+  START([Rule]) --> LIVE{"Live on this<br/>page or step?"}
+  LIVE -- no --> SKIP["Skip"]
+  LIVE -- yes --> NAME{"Data-model<br/>name found?"}
+  NAME -- yes --> WORD{"Wording<br/>matches?"}
+  WORD -- yes --> OK["Answer"]
+  WORD -- no --> REW["Answer,<br/>flag reworded"]
+  NAME -- "only its wording" --> REN["Renamed?<br/>Agent's"]
+  NAME -- "no name rule" --> TEXT{"Text, selector,<br/>or label?"}
+  TEXT -- found --> OK
+  TEXT -- none --> AGENT["Agent's"]
+```
+</div>
+
+- **Data-model names** come first: Progressive's Duck Creek `fieldref` (such as `RiskInput.VIN`), GEICO's name stem (`GiveYear` from `Id_GiveYear_<n>`, without the number GEICO changes on every redraw).
+- **Wording** is then a check. A field found by name whose question reads differently is answered and flagged `reworded`.
+- **Text** on the rule's page comes next, after an anchor question when the text repeats (`askAfter`), of a given control kind (`control`), or the list offering a given answer (`withOption`).
+- **Selectors and label fallbacks** come last. A label fallback never takes one of several rows of a question.
+
+Each answer records what found its field (`how`: field, text, option, selector, label, name). That evidence is how a rule moves from text to a data-model name.
+
+## Field keys: protecting the agent's edits
+
+[`field-key.js`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/src/content/field-key.js) gives every control a key that survives redraws, so an answer the agent changed stays theirs on later fills.
+
+| Carrier | Key |
+| --- | --- |
+| Progressive | `ref:<fieldref>`; a per-vehicle row past the first adds `@<row>` |
+| GEICO | `ref:<Name>` from `Id_<Name>_<n>`; checkbox boxes `ref:<Name>.<Box>`; coverage rows `cov:COMP#2`; policy lists by caption |
+| AmWINS | Element names and ids; shared-name checkboxes get `name#<row>` |
+| Anonymous controls | A versioned structural key anchored to their container and row |
+
+Labels and current values never decide a key. No key carries a vehicle's year, make, model, VIN or a premium.
+
+## Controls it knows how to work
+
+<AccordionGroup>
+  <Accordion title="React-style inputs, dates and amounts" icon="text-cursor-input">
+    Values are set the way React notices them. Date inputs, and amount and range matching for limits and radius, are handled. A text box showing only its input mask (`MM/DD/YYYY`, a VIN's underscores) counts as empty.
+  </Accordion>
+  <Accordion title="ExtJS combos (Progressive)" icon="list">
+    Reached through the page's own objects, which is why Progressive runs in the `MAIN` world.
+  </Accordion>
+  <Accordion title="Shadow-DOM design-system controls (GEICO)" icon="box">
+    Controls are read through open shadow roots in page order. A `<gds-radio-button>`'s pick is its host's `checked` attribute; its question is the `[slot=legend]` of the nearest element holding every option. A `<gds-button>` reads as its slotted text.
+  </Accordion>
+  <Accordion title="select2 lists (GEICO)" icon="search">
+    Answered the way an agent answers them: open with a mousedown, type the option's text in the search box, click the one result reading exactly that text. A change set on the hidden `<select>` is never used, because GEICO doesn't take it.
+  </Accordion>
+  <Accordion title="Address suggestions" icon="map-pin">
+    An `address-suggest` answer types the whole address and picks the first new suggestion with the same house number and ZIP. None matching leaves the street for the agent.
+  </Accordion>
+  <Accordion title="Multi-select lists" icon="list-checks">
+    Get exactly the answer's options, each of which must be offered and enabled, and agree with the same picks in any order.
+  </Accordion>
+</AccordionGroup>
+
+## Repeated drivers, vehicles and trailers
+
+<div className="pele-diagram">
+```text
+flowchart LR
+  subgraph P["Progressive"]
+    P1["scope: 'vehicle'<br/>one step per vehicle,<br/>row named by year/make/model"]
+  end
+  subgraph A["AmWINS"]
+    A1["witness: VIN<br/>the row showing the unit's VIN,<br/>whatever order it was drawn in"]
+  end
+  subgraph G["GEICO"]
+    G1["whenShown.unit<br/>one form at a time,<br/>for the panel's active unit"]
+    G2["Form looks like another unit's:<br/>held until the agent picks it"]
+    G1 --> G2
+  end
+```
+</div>
+
+- A row the page draws in its own order is found by a **witness** it shows, never by position.
+- A row showing a unit the intake doesn't have is never answered. It's one check item named by its place ("Vehicle row 4 on the page"), and Continue waits.
+- Ambiguous rows, such as two vehicles that read the same, stay with the agent.
+
+## When the carrier changes the page
+
+| Signal | What happens |
+| --- | --- |
+| A new question | Unfamiliar; blocks Continue when required or unanswered |
+| A missing option or rejected answer | A fill failure, marked red |
+| A known name missing while its wording is there | `renamed`: left with the agent |
+| At least five questions and 40% of the page unfamiliar | `pageChanged`: the panel says the carrier seems to have changed the page; Continue waits |
+
+A renumbering leaves Progressive's questions found: `npm run e2e -- --fixtures --renumber` replays every layout with shifted ids. This doesn't reliably catch a changed meaning under the same name, or every changed conditional branch.
+
+To respond, capture the scenario and the answers before it, classify it as a mapping, control or meaning change, then update a scrubbed fixture and the expected outcome.
+
+Source: [`docs/browser-filling.md`](https://github.com/lutfikeskin/tni-rater-autofill/blob/main/docs/browser-filling.md)
